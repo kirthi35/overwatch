@@ -1,0 +1,16 @@
+# secrets — NEVER commit
+.env
+.env.*
+!.env.example
+
+# build output
+dist/
+
+# deps
+node_modules/
+
+# local agent settings
+.claude/settings.local.json
+
+# os
+.DS_Store
