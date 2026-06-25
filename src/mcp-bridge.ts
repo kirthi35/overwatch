@@ -11,6 +11,24 @@ let mcpClient: Client | null = null;
 // per process. Set true only after a successful connect+listTools+register.
 let mcpReady = false;
 
+// Reuse the chat's live Groww connection from outside the agent loop (e.g. the
+// in-session monitor watcher) so we don't re-implement MCP plumbing per feature.
+// Returns the parsed first-text-content JSON; throws if not connected. The
+// caller is responsible for timing out a hung call.
+export function growwReady(): boolean {
+  return mcpReady && mcpClient !== null;
+}
+export async function callGroww(name: string, args: any): Promise<any> {
+  if (!mcpClient || !mcpReady) throw new Error('Groww MCP not connected');
+  const result = await mcpClient.callTool({ name, arguments: args });
+  if (result.isError) throw new Error(`MCP tool ${name} error: ${JSON.stringify(result.content)}`);
+  const text = (result.content as Array<any>)
+    .filter(c => c.type === 'text')
+    .map(c => c.text)
+    .join('\n');
+  return JSON.parse(text);
+}
+
 // Resolve the Groww token from the same coordinates index.ts writes to.
 // Priority: process.env (set by index.ts from the keychain at startup),
 // then the keychain entry directly (service 'overwatch', account 'growwToken').

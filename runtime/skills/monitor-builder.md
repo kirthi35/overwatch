@@ -90,6 +90,28 @@ The lib reads the token from `GROWW_API_TOKEN` / `GROWW_MCP_TOKEN` / `GROWW_TOKE
 Launch via `pm2 start ~/.overwatch/daemons/<name>.js --name ow-<name>` or
 `GROWW_API_TOKEN=<tok> nohup node ~/.overwatch/daemons/<name>.js > <name>.out 2>&1 &`.
 
+## Managing monitors (monitorctl)
+One tool runs the whole fleet — `~/.overwatch/daemons/monitorctl.js` (zero-dep,
+discovers monitors from `ps` + the filesystem, so it works on every daemon
+including legacy ones with no pidfile). Use it instead of raw `ps`/`kill`:
+
+```
+node ~/.overwatch/daemons/monitorctl.js list            # all monitors + status
+node ~/.overwatch/daemons/monitorctl.js logs <name> -f  # human-readable logs (follow)
+node ~/.overwatch/daemons/monitorctl.js alerts          # global alert feed, prettified
+node ~/.overwatch/daemons/monitorctl.js pause <name>    # SIGSTOP — freeze, no restart
+node ~/.overwatch/daemons/monitorctl.js resume <name>   # SIGCONT
+node ~/.overwatch/daemons/monitorctl.js stop <name>     # SIGTERM
+node ~/.overwatch/daemons/monitorctl.js delete <name> -y  # stop + remove its files
+```
+
+`logs`/`alerts` translate the terse tick line
+(`LTP 1232 | zone[..]:false | green15m:true | sell:buy 4.55:1`) into plain
+language with IST times and severity icons. `pause` freezes a live process
+without killing it — note a paused monitor is BLIND while frozen (it won't poll
+or run the watchdog), so resume it before relying on it again. `delete` refuses
+to touch shared infra (`monitor-runtime.js`, `thesis-monitor.js`, itself).
+
 ## Generic thesis monitor
 For a standard daily-close thesis JSON (`~/.overwatch/theses/<sym>.json`), don't
 write a new file — reuse `thesis-monitor.js`:

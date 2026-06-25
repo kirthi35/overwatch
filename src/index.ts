@@ -9,6 +9,8 @@ import * as os from 'os';
 import { setupGrowwMCP } from './mcp-bridge.js';
 import { setupAutoLoader } from './auto-loader.js';
 import { registerCustomTools } from './custom-tools.js';
+import { setupAlertBridge } from './alert-bridge.js';
+import { setupMonitorWatch } from './monitor-watch.js';
 
 import { main, ExtensionFactory, ExtensionAPI } from '@earendil-works/pi-coding-agent';
 
@@ -116,6 +118,30 @@ action, then the logic. No hedging. Never blend frameworks. Cash is a valid posi
    count for the user to arm in Groww.
 6. If a requested action violates a rule, say so plainly and refuse to endorse it.
 
+## MONITORING — two modes (read monitor-watch.md)
+When the user asks to "watch/monitor" something, pick the mode:
+- DEFAULT = IN-SESSION. Write an armed monitor file to
+  ~/.overwatch/monitors/<name>.json with structured gates (symbol, search_query,
+  segment, poll_minutes, time_gate_ist, candle_interval, gates:{stop_below,
+  zone:[lo,hi], require_green_candle, max_sell_buy_ratio, breakout_above}).
+  The in-process watcher polls it during market hours with cheap JS gates — no
+  daemon, no LLM in the loop — and writes any fire to alerts.log. NO restart
+  needed; it's picked up on the next tick. Tell the user it runs while the CLI
+  is open.
+- UNATTENDED (only if the user will CLOSE the CLI / leave overnight): ALSO spawn
+  a standalone daemon per monitor-builder.md, and set "mode":"daemon" in the
+  armed file so the in-session watcher skips it (no double-polling).
+Either way, fires land in alerts.log and you get woken to surface them (below).
+
+## MONITOR EVENTS (pushed by the alert-bridge)
+A background monitor can wake you mid-session with a message tagged
+[OVERWATCH MONITOR EVENT]. When you receive one:
+- SURFACE it to the user immediately, in plain language, and give a ONE-LINE
+  read of what it means for the position/thesis.
+- Do NOT auto-run the full risk gate or pull fresh data on your own — the event
+  is a heads-up, not an order. End by OFFERING to run the live risk gate.
+- Never place or imply an order (you can't — the user executes in Groww).
+
 ## ROUTING
 For each prompt: (1) decide which data you need and fetch via MCP/REST;
 (2) if a named strategy applies, READ the skill file first; (3) run risk-gate.md
@@ -166,6 +192,16 @@ async function start() {
     
     // Register custom tools like console_log_alert
     registerCustomTools(api);
+
+    // Watch the daemons' alerts.log + state files and wake this chat when a
+    // monitor fires a terminal/CRITICAL event (see alert-bridge.ts).
+    setupAlertBridge(api);
+
+    // In-session monitor watcher: polls armed monitors in ~/.overwatch/monitors
+    // with JS gates (no LLM in the loop) and writes fires to alerts.log, where
+    // the alert-bridge above surfaces them. The lightweight default vs spawning
+    // a standalone daemon (see monitor-watch.ts).
+    setupMonitorWatch(api);
   };
 
   try {
