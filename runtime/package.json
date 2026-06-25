@@ -1,0 +1,9 @@
+{
+  "name": "overwatch-runtime",
+  "private": true,
+  "type": "commonjs",
+  "description": "Assets deployed to ~/.overwatch at runtime: doctrine skills + resilient monitor daemons. CommonJS realm (overrides the repo root's type:module) so it matches the ~/.overwatch deploy target.",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0"
+  }
+}
