@@ -23,6 +23,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { notifyTelegram } = require('./telegram.js');
 
 const OW_DIR = path.join(os.homedir(), '.overwatch');
 const DEFAULT_LOG = path.join(OW_DIR, 'alerts.log');
@@ -186,6 +187,9 @@ function createMonitor(cfg) {
     const line = `[${nowISO(ms)}] [${severity}] [${label}] ${message}\n`;
     sink(line);
     console.log(`[ALERT ${severity}][${label}] ${message}`);
+    // Walk-away delivery: push to Telegram (no-op if unconfigured; severity-gated
+    // there). Fire-and-forget — must never block or crash the poll loop.
+    try { notifyTelegram({ label, message, severity }); } catch { /* delivery is best-effort */ }
   }
 
   // Parse the first text content block of an MCP tool result as JSON.

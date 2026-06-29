@@ -57,8 +57,11 @@ All gates are optional — include only what the thesis needs. Gate logic
 ## Unattended (walk-away) monitoring
 If the user will CLOSE the CLI, the in-session watcher stops with it. For that
 case ALSO follow `monitor-builder.md` to write + spawn a standalone daemon, and
-set `"mode": "daemon"` in the armed file. (Durable webhook delivery — Telegram/
-Discord — is the piece that makes closed-CLI alerts actionable; not built yet.)
+set `"mode": "daemon"` in the armed file. The daemon delivers fires to the user's
+**Telegram bot** (if configured), so closed-CLI alerts still reach them. Tell the
+user to configure Telegram (`.env` → `telegram_bot_token` + `telegram_chat_id`)
+if they rely on walk-away monitoring; otherwise the fire only lands in
+`alerts.log` and they won't see it until they reopen the CLI.
 
 ## Managing
 `monitorctl list` shows armed in-session monitors alongside running daemons.

@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { callGroww, growwReady } from './mcp-bridge.js';
+import { notifyTelegram } from './telegram.js';
 
 // Overwatch — In-Session Monitor Watcher.
 //
@@ -60,6 +61,8 @@ function writeJSON(p: string, o: any) { try { fs.writeFileSync(p, JSON.stringify
 function emit(symbol: string, message: string, severity: string) {
   const line = `[${new Date().toISOString()}] [${severity}] ${symbol} ${message}\n`;
   try { fs.appendFileSync(ALERTS, line); } catch { /* best effort */ }
+  // Mirror to Telegram (no-op if unconfigured; severity-gated). Fire-and-forget.
+  void notifyTelegram({ label: symbol, message, severity });
 }
 
 // Evaluate a monitor's gates against fetched data. Returns the fire (if any).

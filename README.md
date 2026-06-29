@@ -52,6 +52,9 @@ Copy `.env.example` → `.env` and fill:
 | `ANTHROPIC_API_KEY` | **Yes** | LLM provider key (drives the agent) |
 | `groww_api_key` | **Yes** | Groww **read-only** API token (market data, holdings) |
 | `groww_api_secret` | Optional | Reserved for REST gap-fill (not used in V1) |
+| `telegram_bot_token` | Optional | Telegram bot token (from @BotFather) — enables walk-away alert delivery |
+| `telegram_chat_id` | Optional | Your numeric chat id (from @userinfobot) — where alerts are sent |
+| `telegram_min_severity` | Optional | Min severity to push: `INFO` / `WARNING` / `CRITICAL` (default `WARNING`) |
 
 > Use a Groww token with **market data + holdings/positions scope only — no
 > trade scope.** `.env` is gitignored. Keys live in the OS keychain after first run.
@@ -160,9 +163,30 @@ Test the runtime (no network needed):
 npm test     # = node runtime/daemons/test-monitor-runtime.js (7 tests)
 ```
 
-> **Note:** unattended daemons currently write only to the local `alerts.log`.
-> Webhook delivery (Telegram/Discord) — so a fire reaches you while the CLI is
-> closed — is specced (`idea.md` §6) but **not yet built**.
+### Telegram delivery (walk-away alerts)
+
+So a fire reaches you with the CLI closed, alerts are delivered to a **Telegram
+bot**. Every alert producer (the unattended daemon, the in-session watcher, and
+`console_log_alert`) funnels through the same sink, so a fire reaches your phone
+no matter where it originated.
+
+**Setup (one time):**
+
+1. Message **@BotFather** on Telegram → `/newbot` → copy the **bot token**.
+2. Send your new bot any message, then message **@userinfobot** → copy your
+   numeric **chat id**.
+3. Put both in `.env` (`telegram_bot_token`, `telegram_chat_id`), then `npm start`
+   once — it seeds them into the keychain + a chmod-600 `~/.overwatch/telegram.json`
+   (so daemons spawned in a bare shell can deliver too).
+4. Verify: `node ~/.overwatch/daemons/telegram-test.js` → sends one test message.
+
+Only **`WARNING` + `CRITICAL`** are pushed by default (set `telegram_min_severity`
+to change). Delivery is fire-and-forget — a Telegram outage never blocks or
+crashes a monitor; the alert is still written to `alerts.log`. Telegram is fully
+optional: leave the keys blank and Overwatch logs locally exactly as before.
+
+> Discord delivery is not built (Telegram covers the walk-away gap). Add it the
+> same way — another sink alongside `lib/telegram.js`.
 
 ---
 

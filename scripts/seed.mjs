@@ -31,6 +31,7 @@ const FILES = [
   ['runtime/daemons/thesis-monitor.js', 'daemons/thesis-monitor.js'],
   ['runtime/daemons/test-monitor-runtime.js', 'daemons/test-monitor-runtime.js'],
   ['runtime/daemons/monitorctl.js', 'daemons/monitorctl.js'],
+  ['runtime/daemons/telegram-test.js', 'daemons/telegram-test.js'],
 ];
 
 let copied = 0;
