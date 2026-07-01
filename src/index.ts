@@ -54,6 +54,27 @@ function parseEnvFile(filePath: string): Record<string, string> {
   }
 }
 
+// Optional credential: keychain first, .env/env seed on first run, otherwise
+// EMPTY (no prompt). Used for opt-in features like Telegram delivery so a user
+// who doesn't want alerts pushed isn't forced to answer a prompt every run.
+async function resolveOptionalCredential(account: string, envFallback?: string): Promise<string> {
+  const entry = new AsyncEntry('overwatch', account);
+  try {
+    const existing = await entry.getPassword();
+    if (existing) return existing;
+  } catch {
+    // keychain unavailable — fall through to env
+  }
+  if (envFallback) {
+    try {
+      await entry.setPassword(envFallback);
+      console.log(`[+] Seeded ${account} from .env into the OS keychain.`);
+    } catch { /* non-fatal: still usable from env this run */ }
+    return envFallback;
+  }
+  return '';
+}
+
 async function getOrSetCredential(service: string, account: string, promptMessage: string, isSecret = false, envFallback?: string): Promise<string> {
   const entry = new AsyncEntry(service, account);
   try {
@@ -98,7 +119,9 @@ action, then the logic. No hedging. Never blend frameworks. Cash is a valid posi
 - Groww REST (gap-only): use only for data the MCP lacks.
 - bash / write / read / edit: workspace ~/.overwatch/ ONLY. Use to write thesis JSON
   and generate/spawn monitoring daemons.
-- console_log_alert: used by daemons to notify the user.
+- console_log_alert: used by daemons to notify the user. Alerts write to
+  ~/.overwatch/alerts.log and, if Telegram is configured, are ALSO delivered to
+  the user's Telegram bot (so fires reach them even with the CLI closed).
 
 ## SKILL REGISTRY  (read the file before applying)
 - risk-gate.md        : MANDATORY before any entry recommendation. Run all gates in
@@ -169,6 +192,29 @@ async function start() {
   process.env.ANTHROPIC_API_KEY = llmKey;
   // Make token available to our custom extensions
   process.env.GROWW_API_TOKEN = growwToken;
+
+  // 1b. Optional Telegram alert delivery — walk-away alerts → bot. Opt-in: only
+  // enabled if creds are present (keychain or .env). We ALSO write a chmod-600
+  // ~/.overwatch/telegram.json so daemons spawned in a bare shell (no inherited
+  // env) can still deliver. Env vars set here cover the in-process watcher +
+  // console_log_alert.
+  const tgToken = await resolveOptionalCredential('telegramBotToken', dotenv.telegram_bot_token || process.env.TELEGRAM_BOT_TOKEN);
+  const tgChat = await resolveOptionalCredential('telegramChatId', dotenv.telegram_chat_id || process.env.TELEGRAM_CHAT_ID);
+  if (tgToken && tgChat) {
+    process.env.TELEGRAM_BOT_TOKEN = tgToken;
+    process.env.TELEGRAM_CHAT_ID = tgChat;
+    const minSev = process.env.TELEGRAM_MIN_SEVERITY || dotenv.telegram_min_severity || 'WARNING';
+    try {
+      const tgPath = path.join(OVERWATCH_DIR, 'telegram.json');
+      fs.writeFileSync(tgPath, JSON.stringify({ botToken: tgToken, chatId: tgChat, minSeverity: minSev }, null, 2));
+      fs.chmodSync(tgPath, 0o600);
+      console.log(`[+] Telegram delivery enabled (alerts >= ${minSev} -> bot).`);
+    } catch (e: any) {
+      console.error(`[!] Telegram configured but failed to write telegram.json: ${e.message}`);
+    }
+  } else {
+    console.log('[i] Telegram delivery off (set telegram_bot_token + telegram_chat_id in .env to enable walk-away alerts).');
+  }
 
   // 2. Prepare Sandbox environment
   process.chdir(OVERWATCH_DIR);

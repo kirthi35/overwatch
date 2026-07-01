@@ -3,6 +3,7 @@ import { Type } from "@sinclair/typebox";
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { notifyTelegram } from './telegram.js';
 
 const OVERWATCH_DIR = path.join(os.homedir(), '.overwatch');
 
@@ -22,7 +23,10 @@ export function registerCustomTools(api: ExtensionAPI) {
       
       const logPath = path.join(OVERWATCH_DIR, 'alerts.log');
       fs.appendFileSync(logPath, logEntry, 'utf8');
-      
+
+      // Deliver to Telegram too (no-op if unconfigured; severity-gated there).
+      void notifyTelegram({ message: args.message, severity: args.severity });
+
       console.log(`\n\x1b[33m--- OVERWATCH ALERT [${args.severity}] ---\x1b[0m`);
       console.log(args.message);
       console.log(`\x1b[33m--------------------------------------\x1b[0m\n`);

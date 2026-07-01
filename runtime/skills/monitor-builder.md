@@ -2,7 +2,10 @@
 
 ## Purpose
 Create background monitoring daemons that track conditions using Groww MCP and
-fire alerts to `~/.overwatch/alerts.log` — even after the CLI is closed.
+fire alerts to `~/.overwatch/alerts.log` — even after the CLI is closed. Every
+alert emitted via the shared runtime (`lib/monitor-runtime.js` → `emit`) is ALSO
+delivered to the user's **Telegram bot** when configured (no extra code in the
+daemon; the runtime handles it). Default push threshold is WARNING+CRITICAL.
 
 ## Hard rules (learned the hard way)
 A monitor that goes silently blind is worse than no monitor: it gives false
