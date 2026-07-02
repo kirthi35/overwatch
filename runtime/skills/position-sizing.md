@@ -1,15 +1,18 @@
-# Position Sizing Playbook
+---
+name: position-sizing
+description: >
+  DEPRECATED — superseded by swing-horizon-sizer. Kept only as a redirect so older
+  prompts/routes resolve. Do NOT apply this file's logic.
+superseded_by: swing-horizon-sizer
+---
 
-## Purpose
-Calculates the optimal number of shares or lots to trade based on the defined Risk Gate parameters.
+# Position Sizing — DEPRECATED (redirect)
 
-## Formula
-Position Size = (Account Capital * Risk %) / (Entry Price - Stop Loss Price)
+Sizing is no longer a standalone formula sheet. It is the **`swing-horizon-sizer.md`**
+stage: it estimates the realistic move over the operator's horizon, tests reward
+vs the technical stop, and only then returns an exact share count via
+`Shares = Risk_Budget ÷ (Entry − Stop)` (round down). A great company with no room
+to move in the window is a **no-bet**.
 
-## Constraints
-- Max position size is 25% of total account capital per trade.
-- Cap risk per trade at 1% of total account capital.
-- Account for minimum lot sizes in F&O.
-
-## Actionable Checks
-If a user asks for a trade plan, output the exact quantity they should consider, along with the math used.
+**→ Read `swing-horizon-sizer.md` instead.** See `CONTEXT.md` § "The doctrine
+pipeline" and `docs/adr/0001-doctrine-is-a-staged-pipeline.md`.

@@ -1,14 +1,23 @@
-# Risk Gate Playbook
+---
+name: risk-gate
+description: >
+  DEPRECATED — the mandatory pre-entry gate sequence now lives in entry-exit-gate
+  (timing gates) with sizing/reward tests in swing-horizon-sizer and thesis
+  alignment in stock-thesis-validator. Kept only as a redirect. Do NOT apply this
+  file's logic.
+superseded_by: entry-exit-gate
+---
 
-## Purpose
-Enforces the mandatory stop-loss and maximum drawdown checks before any trade plan is considered.
-You CANNOT proceed to strategy or planning without validating Risk.
+# Risk Gate — DEPRECATED (redirect)
 
-## Checklist
-- [ ] Determine the account wide daily maximum drawdown (Default: 2%).
-- [ ] Ensure a Stop-Loss is clearly defined.
-- [ ] Reject any plan that lacks a clear risk/reward ratio of at least 1:2.
+The old flat "risk gate" split across the pipeline:
 
-## Actionable Checks
-If you detect an opportunity, always prefix your response with a [RISK GATE PASSED] or [RISK GATE FAILED] status.
-Under NO circumstances will you place a trade. Only alert or simulate.
+- **Thesis alignment** → `stock-thesis-validator.md` (is the story true).
+- **Reward-vs-risk + ATR stop + share count** → `swing-horizon-sizer.md`.
+- **Timing gates** (daily-close trend, order-book ≤ 3:1, closed green reversal
+  candle, no-chase) → **`entry-exit-gate.md`**.
+- **Daily-drawdown** → advisory (the agent confirms with the operator; V1 does not
+  track account P&L — see `docs/adr/0002-drawdown-gate-is-advisory.md`).
+
+**→ Read `entry-exit-gate.md` for the go/stand-down decision.** See `CONTEXT.md`
+§ "The doctrine pipeline".

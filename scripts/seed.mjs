@@ -19,15 +19,17 @@ const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const OW = path.join(os.homedir(), '.overwatch');
 
 // Directories the app reads/writes at runtime.
-const DIRS = ['skills', 'daemons', 'daemons/lib', 'theses', 'thesis', 'monitors', 'logs'];
+const DIRS = ['skills', 'skills/_shared', 'daemons', 'daemons/lib', 'theses', 'thesis', 'monitors', 'logs'];
 
 // Source trees that ARE source-of-truth (safe to overwrite on every seed).
 const COPY = [
-  ['runtime/skills', 'skills'],            // doctrine + monitor playbooks (*.md)
-  ['runtime/daemons/lib', 'daemons/lib'],  // shared monitor runtime
+  ['runtime/skills', 'skills'],                  // doctrine + monitor playbooks (*.md)
+  ['runtime/skills/_shared', 'skills/_shared'],  // shared protocols consumed by skills
+  ['runtime/daemons/lib', 'daemons/lib'],        // shared monitor runtime
 ];
 // Individual shared daemon/tool files (NOT per-thesis user daemons).
 const FILES = [
+  ['runtime/daemons/overwatch-monitord.js', 'daemons/overwatch-monitord.js'], // the ONE monitor daemon
   ['runtime/daemons/thesis-monitor.js', 'daemons/thesis-monitor.js'],
   ['runtime/daemons/test-monitor-runtime.js', 'daemons/test-monitor-runtime.js'],
   ['runtime/daemons/monitorctl.js', 'daemons/monitorctl.js'],

@@ -15,7 +15,7 @@ A local-first terminal AI trading assistant for the Indian stock market (NSE).
 |---|---|
 | **Type** | Standalone Node.js CLI |
 | **Framework** | Pi agent harness (`@earendil-works/pi-coding-agent`) |
-| **LLM** | Anthropic Claude (default) |
+| **LLM** | Anthropic Claude (default) · GLM-5.2 via Ollama Cloud (opt-in, `OVERWATCH_LLM=glm`) |
 | **Data source** | Groww MCP (`https://mcp.groww.in/mcp/`), read-only, ~31 tools |
 | **Entry point** | `dist/index.js` (bin name: `overwatch`) |
 | **Build** | `npm run build` (tsc → `dist/`) |
@@ -49,15 +49,48 @@ Copy `.env.example` → `.env` and fill:
 
 | Key | Required | Purpose |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | **Yes** | LLM provider key (drives the agent) |
+| `ANTHROPIC_API_KEY` | **Yes** (Claude mode) | LLM provider key (drives the agent). Required unless `OVERWATCH_LLM=glm`. |
 | `groww_api_key` | **Yes** | Groww **read-only** API token (market data, holdings) |
 | `groww_api_secret` | Optional | Reserved for REST gap-fill (not used in V1) |
+| `OVERWATCH_LLM` | Optional | `claude` (default) or `glm` — pick the brain that drives the agent |
+| `ollama_api_key` | **Yes** (GLM mode) | Ollama Cloud API key — required when `OVERWATCH_LLM=glm` |
+| `overwatch_glm_model` | Optional | GLM tag to launch on (default `glm-5.2`) |
+| `overwatch_glm_models` | Optional | Comma-separated GLM tags to register so `/model` can switch among them (default `glm-5.2,glm-5.1,glm-5,glm-4.7`) |
+| `ollama_base_url` | Optional | Ollama Cloud OpenAI-compat endpoint (default `https://ollama.com/v1`) |
 | `telegram_bot_token` | Optional | Telegram bot token (from @BotFather) — enables walk-away alert delivery |
 | `telegram_chat_id` | Optional | Your numeric chat id (from @userinfobot) — where alerts are sent |
 | `telegram_min_severity` | Optional | Min severity to push: `INFO` / `WARNING` / `CRITICAL` (default `WARNING`) |
 
 > Use a Groww token with **market data + holdings/positions scope only — no
 > trade scope.** `.env` is gitignored. Keys live in the OS keychain after first run.
+
+### Switching the LLM (Claude ⇄ GLM-5.2)
+
+The agent runs on **Anthropic Claude by default**. To run it on **GLM-5.2 via
+Ollama Cloud** instead, set `OVERWATCH_LLM=glm` and provide `ollama_api_key`:
+
+```bash
+OVERWATCH_LLM=glm ollama_api_key=<key> npm start   # this run on GLM-5.2
+npm start                                           # back to Claude (default)
+```
+
+On a GLM run Overwatch registers Ollama Cloud as an OpenAI-compatible provider in
+`~/.pi/agent/models.json` (merged, never clobbering other providers) and hands the
+Pi harness `--model ollama-cloud/<tag>`. The key is stored as a `$OLLAMA_API_KEY`
+reference, so the secret never lands in that file. The full GLM family
+(`glm-5.2,glm-5.1,glm-5,glm-4.7`) is registered, so **`/model` inside the session
+switches among them live** (and to Claude, if the Anthropic key is present) — no
+restart. That in-session pick lasts the session; the launch default is still
+`overwatch_glm_model` / `OVERWATCH_LLM` on the next start. It is a **switch, not a
+migration** — unset `OVERWATCH_LLM` (or set it to `claude`) and nothing else
+changes. The default tag is `glm-5.2` (the OpenAI-compat `/v1` name — **not**
+`glm-5.2:cloud`, which is native-Ollama naming and returns empty on `/v1`); set
+`overwatch_glm_model` to any other tag from `GET /v1/models`.
+
+> GLM is an open model; the multi-stage doctrine pipeline (tool discipline, gate
+> ordering) was authored against Claude. Treat GLM output with extra skepticism
+> until you've verified it holds the doctrine — the read-only, no-execution
+> constraint still guarantees it cannot move money either way.
 
 ---
 
@@ -195,6 +228,7 @@ optional: leave the keys blank and Overwatch logs locally exactly as before.
 ```
 src/
   index.ts            # entry: splash, keychain creds, doctrine prompt, boots Pi
+  llm-provider.ts     # LLM selection: Claude (default) or GLM-5.2 via Ollama Cloud
   mcp-bridge.ts       # Groww MCP (StreamableHTTP + Bearer) → Pi tools; callGroww()
   auto-loader.ts      # keyword → doctrine skill injection
   custom-tools.ts     # console_log_alert → alerts.log

@@ -10,7 +10,7 @@ import { setupGrowwMCP } from './mcp-bridge.js';
 import { setupAutoLoader } from './auto-loader.js';
 import { registerCustomTools } from './custom-tools.js';
 import { setupAlertBridge } from './alert-bridge.js';
-import { setupMonitorWatch } from './monitor-watch.js';
+import { resolveLlmProvider, resolveGlmConfig, registerOllamaProvider, glmPiArgs } from './llm-provider.js';
 
 import { main, ExtensionFactory, ExtensionAPI } from '@earendil-works/pi-coding-agent';
 
@@ -119,17 +119,35 @@ action, then the logic. No hedging. Never blend frameworks. Cash is a valid posi
 - Groww REST (gap-only): use only for data the MCP lacks.
 - bash / write / read / edit: workspace ~/.overwatch/ ONLY. Use to write thesis JSON
   and generate/spawn monitoring daemons.
+- arm_monitor / disarm_monitor: the PROPER way to start/stop watching a symbol
+  in-session. arm_monitor writes+validates the monitor file; the in-process
+  watcher polls it every minute during market hours. NEVER hand-write the monitor
+  JSON — call arm_monitor.
 - console_log_alert: used by daemons to notify the user. Alerts write to
   ~/.overwatch/alerts.log and, if Telegram is configured, are ALSO delivered to
   the user's Telegram bot (so fires reach them even with the CLI closed).
 
-## SKILL REGISTRY  (read the file before applying)
-- risk-gate.md        : MANDATORY before any entry recommendation. Run all gates in
-                        order; STAND DOWN and FLAG if any fails.
-- position-sizing.md  : compute share count from risk budget + ATR stop.
-- momentum-raid.md    : momentum/breakout framework.
-- valuation-campaign.md: valuation framework (NEVER mix with momentum).
-- monitor-builder.md  : how to write & spawn a background monitor.
+## SKILL REGISTRY — the doctrine pipeline  (read the file before applying)
+Analysis is a STAGED pipeline; each stage consumes the previous stage's output.
+Route to the stage the operator is at, and never skip stages when recommending an
+entry. Frameworks are never blended.
+- macro-to-india-mapper    : STAGE 1 — macro/global event -> Indian theme in play.
+- theme-to-stock-scout     : STAGE 2 — theme -> best candidate stock(s).
+- stock-thesis-validator   : STAGE 3 — is the story/driver true + break-triggers.
+- valuation-cycle-analyzer : STAGE 4 — HOW HIGH / HOW FAST / HOW LONG (capacity,
+                             never a target/prediction).
+- swing-horizon-sizer      : STAGE 5 — is the bet worth it over the horizon + exact
+                             share count (Shares = risk budget / (entry - stop)).
+                             NO-BET is a valid, frequent output.
+- entry-exit-gate          : STAGE 6 — WHEN to pull the trigger: daily-close trend,
+                             order-book sell:buy <= 3:1, CLOSED green reversal candle,
+                             no-chase. MANDATORY before any entry; STAND DOWN if any
+                             gate fails.
+- monitor-watch.md         : watch a symbol while the CLI is open (default).
+- monitor-builder.md       : spawn an unattended daemon (walk-away / overnight).
+(_shared/multi-timeframe-protocol.md is the shared structure read the analytical
+stages run first.) Some analytical stages are STUBS awaiting authored doctrine —
+say so plainly rather than inventing rules. Read-only always: you never place orders.
 
 ## RULES OF ENGAGEMENT
 1. Never recommend buying a falling price — require a CLOSED green reversal candle.
@@ -141,20 +159,19 @@ action, then the logic. No hedging. Never blend frameworks. Cash is a valid posi
    count for the user to arm in Groww.
 6. If a requested action violates a rule, say so plainly and refuse to endorse it.
 
-## MONITORING — two modes (read monitor-watch.md)
-When the user asks to "watch/monitor" something, pick the mode:
-- DEFAULT = IN-SESSION. Write an armed monitor file to
-  ~/.overwatch/monitors/<name>.json with structured gates (symbol, search_query,
-  segment, poll_minutes, time_gate_ist, candle_interval, gates:{stop_below,
-  zone:[lo,hi], require_green_candle, max_sell_buy_ratio, breakout_above}).
-  The in-process watcher polls it during market hours with cheap JS gates — no
-  daemon, no LLM in the loop — and writes any fire to alerts.log. NO restart
-  needed; it's picked up on the next tick. Tell the user it runs while the CLI
-  is open.
-- UNATTENDED (only if the user will CLOSE the CLI / leave overnight): ALSO spawn
-  a standalone daemon per monitor-builder.md, and set "mode":"daemon" in the
-  armed file so the in-session watcher skips it (no double-polling).
-Either way, fires land in alerts.log and you get woken to surface them (below).
+## MONITORING — one monitor (read monitor-watch.md)
+When the user asks to "watch/monitor" something, call the arm_monitor tool with
+structured gates (name, symbol, search_query, segment, poll_minutes [default 1],
+time_gate_ist, candle_interval, gates:{stop_below, zone:[lo,hi],
+require_green_candle, max_sell_buy_ratio, breakout_above}). NEVER hand-write the
+monitor JSON. arm_monitor writes+validates the file and starts the single
+always-on daemon (overwatch-monitord), which polls every armed monitor every
+minute during market hours with cheap JS gates — no LLM in the loop — and writes
+any fire to alerts.log. It SURVIVES the CLI closing; fires reach the user's
+Telegram if configured. NO restart needed; picked up on the next tick. Use
+disarm_monitor to stop. For bespoke gates the generic schema can't express,
+hand-write a daemon per monitor-builder.md and pass mode:"daemon" so the shared
+daemon skips it. Fires land in alerts.log and you get woken to surface them (below).
 
 ## MONITOR EVENTS (pushed by the alert-bridge)
 A background monitor can wake you mid-session with a message tagged
@@ -179,19 +196,54 @@ async function start() {
   const llmEnv = dotenv.ANTHROPIC_API_KEY || process.env.ANTHROPIC_API_KEY;
   const growwEnv = dotenv.groww_api_key || process.env.GROWW_API_TOKEN;
 
-  // 1. Credentials flow — keychain first, .env fallback on first run, prompt otherwise.
-  const llmKey = await getOrSetCredential('overwatch', 'llmKey', 'Enter LLM Provider API Key (e.g. ANTHROPIC_API_KEY):', true, llmEnv);
-  const growwToken = await getOrSetCredential('overwatch', 'growwToken', 'Enter Groww Read-Only Token:', true, growwEnv);
-  
-  if (!llmKey) {
-    console.error("LLM Key is required to run Overwatch.");
-    process.exit(1);
-  }
+  // Which brain drives the Pi agent this run: Claude (default) or GLM-5.2 via
+  // Ollama Cloud. Switchable/reversible via OVERWATCH_LLM (env or .env).
+  const llmProvider = resolveLlmProvider(dotenv);
 
-  // Set the LLM key for Pi (Anthropic by default based on spec)
-  process.env.ANTHROPIC_API_KEY = llmKey;
+  // 1. Credentials flow — keychain first, .env fallback on first run, prompt otherwise.
+  const growwToken = await getOrSetCredential('overwatch', 'growwToken', 'Enter Groww Read-Only Token:', true, growwEnv);
   // Make token available to our custom extensions
   process.env.GROWW_API_TOKEN = growwToken;
+  // Persist a chmod-600 groww.json so the always-on monitor daemon can read the
+  // token when launched outside this process (reboot / pm2 / systemd), not just
+  // when arm_monitor spawns it with the env inherited. Best-effort.
+  try {
+    const growwPath = path.join(OVERWATCH_DIR, 'groww.json');
+    fs.writeFileSync(growwPath, JSON.stringify({ token: growwToken }, null, 2));
+    fs.chmodSync(growwPath, 0o600);
+  } catch { /* non-fatal: env still covers the CLI-spawned daemon */ }
+
+  // 1a. LLM credentials + provider selection. `piArgs` picks the model for Pi's
+  // main(); empty = Pi's default (Anthropic).
+  let piArgs: string[] = [];
+  if (llmProvider === 'glm') {
+    // GLM mode: Ollama Cloud key is REQUIRED; Anthropic key is optional (kept only
+    // if already present, so a GLM-only operator isn't prompted for a Claude key).
+    const anthropicKey = await resolveOptionalCredential('llmKey', llmEnv);
+    if (anthropicKey) process.env.ANTHROPIC_API_KEY = anthropicKey;
+
+    const ollamaEnv = dotenv.ollama_api_key || dotenv.OLLAMA_API_KEY || process.env.OLLAMA_API_KEY;
+    const ollamaKey = await getOrSetCredential('overwatch', 'ollamaKey', 'Enter Ollama Cloud API Key (OLLAMA_API_KEY):', true, ollamaEnv);
+    if (!ollamaKey) {
+      console.error('OVERWATCH_LLM=glm but no Ollama Cloud API key provided (set ollama_api_key in .env or provide it when prompted).');
+      process.exit(1);
+    }
+    process.env.OLLAMA_API_KEY = ollamaKey;
+
+    const glm = resolveGlmConfig(dotenv);
+    registerOllamaProvider(glm);
+    piArgs = glmPiArgs(glm.modelId);
+    console.log(`[+] LLM: Ollama Cloud GLM (${glm.modelId}) via ${glm.baseUrl}. Set OVERWATCH_LLM=claude to switch back.`);
+  } else {
+    // Claude mode (default): Anthropic key is REQUIRED.
+    const llmKey = await getOrSetCredential('overwatch', 'llmKey', 'Enter LLM Provider API Key (e.g. ANTHROPIC_API_KEY):', true, llmEnv);
+    if (!llmKey) {
+      console.error("LLM Key is required to run Overwatch.");
+      process.exit(1);
+    }
+    process.env.ANTHROPIC_API_KEY = llmKey;
+    console.log('[i] LLM: Anthropic Claude (default). Set OVERWATCH_LLM=glm for Ollama Cloud GLM-5.2.');
+  }
 
   // 1b. Optional Telegram alert delivery — walk-away alerts → bot. Opt-in: only
   // enabled if creds are present (keychain or .env). We ALSO write a chmod-600
@@ -239,19 +291,16 @@ async function start() {
     // Register custom tools like console_log_alert
     registerCustomTools(api);
 
-    // Watch the daemons' alerts.log + state files and wake this chat when a
-    // monitor fires a terminal/CRITICAL event (see alert-bridge.ts).
+    // Watch the monitor daemon's alerts.log + state files and wake this chat
+    // when a monitor fires a terminal/CRITICAL event (see alert-bridge.ts).
+    // This is the ONLY monitoring concern the CLI owns — surfacing. Polling
+    // lives entirely in the always-on overwatch-monitord daemon, which the
+    // arm_monitor tool starts on demand (so a watch survives the CLI closing).
     setupAlertBridge(api);
-
-    // In-session monitor watcher: polls armed monitors in ~/.overwatch/monitors
-    // with JS gates (no LLM in the loop) and writes fires to alerts.log, where
-    // the alert-bridge above surfaces them. The lightweight default vs spawning
-    // a standalone daemon (see monitor-watch.ts).
-    setupMonitorWatch(api);
   };
 
   try {
-    await main([], { extensionFactories: [overwatchExtension] });
+    await main(piArgs, { extensionFactories: [overwatchExtension] });
   } catch (error: any) {
     console.error("Failed to start session:", error.message);
   }

@@ -1,4 +1,22 @@
+---
+name: monitor-builder
+description: >
+  USE THIS SKILL to build an UNATTENDED background daemon that keeps monitoring after
+  the CLI is closed (walk-away / overnight). Writes a thin daemon on the shared
+  resilient runtime and delivers fires to Telegram.
+triggers: [daemon, background monitor, unattended, overnight, walk away, walk-away, spawn, monitorctl, close the cli]
+---
+
 # Monitor Builder Playbook
+
+## When to use this (escape hatch only)
+For a NORMAL watch — a stop, an entry zone, a breakout heads-up — DO NOT write a
+daemon. Call the `arm_monitor` tool (see `monitor-watch.md`); the single
+always-on `overwatch-monitord` handles it and already survives the CLI closing.
+Use THIS skill only when the thesis needs gate logic the generic schema can't
+express (custom indicators, multi-leg conditions, non-standard data). When you
+do, pass `mode:"daemon"` to `arm_monitor` for that symbol so the shared daemon
+skips it (no double-polling).
 
 ## Purpose
 Create background monitoring daemons that track conditions using Groww MCP and

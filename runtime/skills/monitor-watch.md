@@ -1,35 +1,52 @@
-# Monitor Watch Playbook (in-session, lightweight)
+---
+name: monitor-watch
+description: >
+  USE THIS SKILL to watch an NSE symbol. Call the arm_monitor tool; the single
+  always-on monitor daemon polls it every minute during market hours, survives
+  the CLI closing, and surfaces a fire back into the chat (and to Telegram).
+triggers: [monitor, watch, alert me, keep an eye, arm a monitor, poll, arm_monitor, disarm]
+---
+
+# Monitor Playbook (the one monitor)
 
 ## Purpose
-The DEFAULT way to "watch" a stock while the Overwatch CLI is open. You arm a
-monitor by writing one JSON file; an in-process watcher polls it during market
-hours with cheap JS gates (no daemon, no LLM in the loop) and writes any fire to
-`~/.overwatch/alerts.log`, where the alert-bridge wakes you to surface it.
+The way to "watch" a stock. You arm a monitor by calling the **`arm_monitor`
+tool**. A single always-on daemon (`overwatch-monitord`) polls every armed
+monitor during market hours with cheap JS gates (no LLM in the loop) and writes
+any fire to `~/.overwatch/alerts.log`, where the alert-bridge wakes you to
+surface it. Telegram delivery (if configured) means fires reach the user even
+with the CLI closed.
 
-Use this instead of writing+spawning a daemon UNLESS the user will close the CLI
-/ leave the position overnight — then ALSO use `monitor-builder.md` (see below).
+There is ONE monitor engine now — it runs whether the CLI is open or not. You do
+NOT choose between "in-session" and "daemon"; `arm_monitor` starts the daemon on
+demand. (For bespoke gates that don't fit the generic schema below, hand-write a
+daemon per `monitor-builder.md` and pass `mode:"daemon"` so this one skips it.)
 
 ## How it works
-- You write `~/.overwatch/monitors/<name>.json` (see schema).
-- The watcher (built into the app) picks it up on its next minute tick — NO
-  restart needed.
-- It polls every `poll_minutes` (default 5), only during NSE hours (skips
-  weekends), only after `time_gate_ist` if set.
-- It uses the chat's own Groww MCP connection — you don't re-implement anything.
-- On a terminal gate it writes a CRITICAL/`fired` line and stops (one-shot). On
-  the breakout heads-up it writes one WARNING and keeps watching.
-- If data is unreachable for 3 cycles it writes a BLIND warning (so the watch
-  can't go silently dead).
+- You call the **`arm_monitor` tool** (it writes+validates
+  `~/.overwatch/monitors/<name>.json` and ensures the daemon is up — do NOT
+  hand-write that file).
+- The daemon picks it up on its next minute tick — NO restart needed. Deleting
+  the file (`disarm_monitor`) drops it on the next tick.
+- It polls every `poll_minutes` (default 1 — every minute), only during NSE
+  hours (skips weekends), only after `time_gate_ist` if set.
+- It uses one shared Groww MCP connection per tick.
+- On a terminal gate it writes a CRITICAL/`fired` line and stops that monitor
+  (one-shot). On the breakout heads-up it writes one WARNING and keeps watching.
+- If data is unreachable it runs an escalating blind watchdog: WARNING at 3
+  consecutive failures, CRITICAL at 10, re-pings after that — so the watch can't
+  go silently dead.
 
-## Arming schema
+## Arming (call the tool)
+Call `arm_monitor` with these params (the tool writes+validates the JSON file —
+don't hand-write it):
 ```json
 {
   "name": "paras-scenario-a",
   "symbol": "PARAS",
   "search_query": "Paras Defence",
   "segment": "CASH",
-  "mode": "in-session",
-  "poll_minutes": 5,
+  "poll_minutes": 1,
   "time_gate_ist": 935,
   "candle_interval": 15,
   "gates": {
@@ -41,29 +58,26 @@ Use this instead of writing+spawning a daemon UNLESS the user will close the CLI
   }
 }
 ```
-All gates are optional — include only what the thesis needs. Gate logic
+All gates are optional — include only what the thesis needs (at least one
+required; `require_green_candle` needs `candle_interval`). Gate logic
 (evaluated in priority order):
 1. `stop_below` — LTP under it → CRITICAL, terminal (invalidation).
 2. `zone`+`require_green_candle`+`max_sell_buy_ratio` — LTP in zone, last candle
    green (if required), book ratio under cap → CRITICAL, terminal (entry gate).
 3. `breakout_above` — LTP over it → WARNING, non-terminal heads-up (fires once).
 
-## Modes
-- `"mode": "in-session"` (default) — the watcher owns it.
-- `"mode": "daemon"` — the watcher SKIPS it; a spawned daemon owns it. Set this
-  when you also start a daemon (unattended mode) so the symbol isn't polled
-  twice.
+## Walk-away (CLI closed)
+Automatic — the daemon survives the CLI. To actually SEE a fire while away,
+configure Telegram (`.env` → `telegram_bot_token` + `telegram_chat_id`);
+otherwise the fire only lands in `alerts.log` and the user won't see it until
+they reopen the CLI. Default push threshold is WARNING+CRITICAL.
 
-## Unattended (walk-away) monitoring
-If the user will CLOSE the CLI, the in-session watcher stops with it. For that
-case ALSO follow `monitor-builder.md` to write + spawn a standalone daemon, and
-set `"mode": "daemon"` in the armed file. The daemon delivers fires to the user's
-**Telegram bot** (if configured), so closed-CLI alerts still reach them. Tell the
-user to configure Telegram (`.env` → `telegram_bot_token` + `telegram_chat_id`)
-if they rely on walk-away monitoring; otherwise the fire only lands in
-`alerts.log` and they won't see it until they reopen the CLI.
+## Bespoke gates (escape hatch)
+If the thesis needs logic the generic gates can't express, hand-write a daemon
+per `monitor-builder.md` and pass `mode:"daemon"` to `arm_monitor` so the shared
+daemon skips that symbol (no double-polling).
 
 ## Managing
-`monitorctl list` shows armed in-session monitors alongside running daemons.
-To stop watching, delete the file: `rm ~/.overwatch/monitors/<name>.json`
-(or set `"disabled": true`).
+`monitorctl list` shows armed monitors + the running daemon.
+To stop watching, call the **`disarm_monitor`** tool with the monitor `name`
+(or `rm ~/.overwatch/monitors/<name>.json`, or set `"disabled": true`).
