@@ -32,6 +32,12 @@ const STATE_DIR = path.join(OW, 'thesis');
 const MON_DIR = path.join(OW, 'monitors');   // armed in-session monitors (JSON)
 const ALERTS = path.join(OW, 'alerts.log');
 
+// launchd persistence for the always-on monitor daemon (macOS). Makes monitord
+// survive reboot/logout, not just the CLI closing.
+const LAUNCHD_LABEL = 'com.overwatch.monitord';
+const LAUNCHD_PLIST = path.join(os.homedir(), 'Library', 'LaunchAgents', `${LAUNCHD_LABEL}.plist`);
+const MONITORD_JS = path.join(DAEMON_DIR, 'overwatch-monitord.js');
+
 // Shared infra that is NEVER a monitor and must never be deleted.
 const SHARED = new Set([
   'monitor-runtime.js', 'thesis-monitor.js', 'test-monitor-runtime.js',
@@ -500,6 +506,106 @@ function cmdDelete(name, yes) {
   console.log(c('green', `Deleted ${m.name}.`));
 }
 
+// ---- launchd persistence (macOS) ------------------------------------------
+//
+// arm_monitor spawns monitord detached, so a watch survives the CLI closing —
+// but NOT a reboot/logout. A LaunchAgent makes launchd own the daemon: start it
+// at login and relaunch it if it crashes. KeepAlive is scoped to SuccessfulExit
+// =false so monitord's clean singleton-exit(0) (when another copy is already
+// running) is NOT fought, only real crashes are relaunched.
+
+function plistXml() {
+  const logOut = path.join(LOG_DIR, 'monitord.out');
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>            <string>${LAUNCHD_LABEL}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>${process.execPath}</string>
+    <string>${MONITORD_JS}</string>
+  </array>
+  <key>RunAtLoad</key>        <true/>
+  <key>KeepAlive</key>        <dict><key>SuccessfulExit</key><false/></dict>
+  <key>ThrottleInterval</key> <integer>30</integer>
+  <key>WorkingDirectory</key> <string>${OW}</string>
+  <key>StandardOutPath</key>  <string>${logOut}</string>
+  <key>StandardErrorPath</key><string>${logOut}</string>
+</dict>
+</plist>
+`;
+}
+
+function launchdLoaded() {
+  try { execSync(`launchctl list ${LAUNCHD_LABEL}`, { stdio: 'pipe' }); return true; } catch { return false; }
+}
+
+function cmdDaemonInstall() {
+  if (process.platform !== 'darwin') {
+    console.log(c('yellow', 'launchd install is macOS-only. On Linux use systemd --user or pm2 to run:'));
+    console.log(c('dim', `  ${process.execPath} ${MONITORD_JS}`));
+    return;
+  }
+  if (!fs.existsSync(MONITORD_JS)) { console.log(c('red', `monitord not found at ${MONITORD_JS} — run \`npm run seed\` first.`)); return; }
+  try {
+    fs.mkdirSync(path.dirname(LAUNCHD_PLIST), { recursive: true });
+    fs.mkdirSync(LOG_DIR, { recursive: true });
+    fs.writeFileSync(LAUNCHD_PLIST, plistXml());
+    // Reload cleanly: unload if already present, then load -w (enable).
+    if (launchdLoaded()) { try { execSync(`launchctl unload ${LAUNCHD_PLIST}`, { stdio: 'pipe' }); } catch {} }
+    execSync(`launchctl load -w ${LAUNCHD_PLIST}`, { stdio: 'pipe' });
+    console.log(c('green', `Installed + loaded ${LAUNCHD_LABEL}.`));
+    console.log(c('dim', `  plist: ${LAUNCHD_PLIST}`));
+    console.log(c('dim', `  monitord now starts at login and relaunches on crash. Token read from ~/.overwatch/groww.json.`));
+    console.log(c('dim', `  Check:  monitorctl daemon status`));
+  } catch (e) {
+    console.log(c('red', `Install failed: ${e.message}`));
+  }
+}
+
+function cmdDaemonUninstall() {
+  if (process.platform !== 'darwin') { console.log(c('yellow', 'launchd is macOS-only; nothing to uninstall.')); return; }
+  try {
+    if (fs.existsSync(LAUNCHD_PLIST)) {
+      try { execSync(`launchctl unload ${LAUNCHD_PLIST}`, { stdio: 'pipe' }); } catch {}
+      fs.unlinkSync(LAUNCHD_PLIST);
+      console.log(c('green', `Uninstalled ${LAUNCHD_LABEL} (plist removed, unloaded).`));
+    } else {
+      console.log(c('gray', `${LAUNCHD_LABEL} not installed.`));
+    }
+    console.log(c('dim', 'A monitord already spawned by the CLI keeps running until it exits; stop it with: monitorctl stop overwatch-monitord'));
+  } catch (e) {
+    console.log(c('red', `Uninstall failed: ${e.message}`));
+  }
+}
+
+function cmdDaemonStatus() {
+  const pidfile = path.join(OW, 'monitord.pid');
+  const pinfo = readJSON(pidfile);
+  const running = pinfo && pinfo.pid && (() => { try { process.kill(pinfo.pid, 0); return true; } catch { return false; } })();
+  console.log('');
+  console.log(c('bold', '  MONITORD DAEMON'));
+  console.log(c('gray', '  ' + '-'.repeat(50)));
+  console.log(`  process:        ${running ? c('green', `running (pid ${pinfo.pid}, since ${pinfo.startedAt || '?'})`) : c('red', 'NOT running')}`);
+  if (process.platform === 'darwin') {
+    console.log(`  launchd:        ${launchdLoaded() ? c('green', 'installed (starts at login, relaunch on crash)') : c('yellow', 'not installed — run: monitorctl daemon install')}`);
+    console.log(c('dim', `  plist:          ${fs.existsSync(LAUNCHD_PLIST) ? LAUNCHD_PLIST : '(none)'}`));
+  }
+  const armedN = (() => { try { return fs.readdirSync(MON_DIR).filter(f => f.endsWith('.json')).length; } catch { return 0; } })();
+  console.log(`  armed monitors: ${armedN}`);
+  console.log('');
+}
+
+function cmdDaemon(sub) {
+  switch (sub) {
+    case 'install': case 'enable': return cmdDaemonInstall();
+    case 'uninstall': case 'disable': return cmdDaemonUninstall();
+    case 'status': case undefined: return cmdDaemonStatus();
+    default: console.log(c('red', `unknown daemon subcommand: ${sub}`)); console.log(c('dim', '  use: daemon install | uninstall | status'));
+  }
+}
+
 // ---- arg parsing & dispatch -----------------------------------------------
 
 function parseOpts(argv) {
@@ -526,6 +632,7 @@ ${c('bold', 'monitorctl')} — manage Overwatch monitors
   ${c('cyan', 'resume')} <name>              unfreeze it (SIGCONT)
   ${c('cyan', 'stop')} <name>                terminate it (SIGTERM)
   ${c('cyan', 'delete')} <name> -y           stop + remove its files
+  ${c('cyan', 'daemon')} install|uninstall|status   persist monitord via launchd (macOS)
 `);
 }
 
@@ -541,6 +648,7 @@ function main() {
     case 'resume': case 'unpause': if (!name) return console.log(c('red', 'usage: monitorctl resume <name>')); return cmdResume(name);
     case 'stop': case 'kill': if (!name) return console.log(c('red', 'usage: monitorctl stop <name>')); return cmdStop(name);
     case 'delete': case 'rm': if (!name) return console.log(c('red', 'usage: monitorctl delete <name> -y')); return cmdDelete(name, o.yes);
+    case 'daemon': return cmdDaemon(name);
     case 'help': case '-h': case '--help': return usage();
     default: console.log(c('red', `unknown command: ${cmd}`)); return usage();
   }

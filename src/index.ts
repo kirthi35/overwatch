@@ -6,7 +6,7 @@ import { AsyncEntry } from '@napi-rs/keyring';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
-import { setupGrowwMCP } from './mcp-bridge.js';
+import { setupGrowwMCP, growwStatus } from './mcp-bridge.js';
 import { setupAutoLoader } from './auto-loader.js';
 import { registerCustomTools } from './custom-tools.js';
 import { setupAlertBridge } from './alert-bridge.js';
@@ -113,7 +113,35 @@ trader. You are a SCOUT AND ANALYST. You DO NOT and CANNOT place orders — the 
 executes all trades manually in Groww. Speak directly and structured: lead with the
 action, then the logic. No hedging. Never blend frameworks. Cash is a valid position.
 
+## DATA INTEGRITY — ABSOLUTE (read before anything else)
+You give real money decisions. FABRICATING A NUMBER IS THE WORST THING YOU CAN DO.
+1. Every market number you state — price, LTP, quote, day change, depth/sell:buy
+   ratio, candle color, RSI/indicator — MUST come from a Groww tool call that
+   RETURNED SUCCESSFULLY IN THE CURRENT TURN. If you don't have that, you do not
+   have the number. Do not compute, estimate, interpolate, round, or reuse a
+   previous turn's value "as current".
+2. If a data tool errors, times out, returns "not found", returns a
+   🚫 GROWW_FEED_DOWN result, or is otherwise unavailable → YOU ARE BLIND. Reply
+   with exactly this banner: "🚫 BLIND — NO LIVE GROWW FEED" then say what you
+   tried, and REFUSE every price-dependent call (entry / exit / stop / target /
+   "breakout fired" / "it's moving" / "buy now"). Offer to retry. Never fill the
+   gap with a guessed price.
+3. A monitor file (~/.overwatch/monitors/*.json) is CONFIG, not a feed. Its
+   state.lastLtp / state.lastPoll is a PAST, timestamped reading written by the
+   daemon — NOT the live price. Reading that file is NOT a quote. If you cite it,
+   you MUST label it "last polled <state.lastPoll>, STALE" and must not present it
+   as the current price or as proof the market moved.
+4. On repeated "check" / "is it moving?": you may report NEW numbers ONLY if you
+   made a NEW successful quote call THIS turn. If the feed is down or unchanged,
+   say "no fresh data since <ts>" — never invent a tick-by-tick sequence.
+5. Never claim a monitor is "live / polling right now" unless market_feed_status
+   confirms the feed works AND the monitord daemon is running. When unsure whether
+   the feed is live, CALL market_feed_status before quoting any price.
+
 ## ACTIVE TOOLS
+- market_feed_status: verify the LIVE feed actually works right now (real probe).
+  Call before quoting a price whenever you're not certain your last data call this
+  turn succeeded, and after any 🚫 GROWW_FEED_DOWN result.
 - Groww MCP (primary): live quote + depth ladder, historical candles, indicators,
   fundamentals, holdings. Use for ALL data/gates. Never guess financial data.
 - Groww REST (gap-only): use only for data the MCP lacks.
@@ -276,12 +304,25 @@ async function start() {
 
   const overwatchExtension: ExtensionFactory = (api: ExtensionAPI) => {
     api.on("before_agent_start", async (event) => {
-      // Connect to Groww MCP and register tools dynamically
-      await setupGrowwMCP(api);
+      // Connect to Groww MCP and register tools dynamically. Runs per query, so
+      // it re-attempts the connection each turn if a prior turn was blind.
+      const status = await setupGrowwMCP(api);
+
+      // If the live feed is down THIS turn, prepend a loud banner so the model
+      // knows it's blind and refuses to fabricate prices (DATA INTEGRITY rule 2).
+      const s = status || growwStatus();
+      const blindBanner = (!s.ready)
+        ? `\n\n---\n## ⚠️ LIVE FEED STATUS THIS TURN: DOWN\n` +
+          `The Groww MCP data feed is NOT connected right now` +
+          `${s.lastError ? ` (${s.lastError})` : ''}. You are BLIND on live market data. ` +
+          `Per DATA INTEGRITY: reply "🚫 BLIND — NO LIVE GROWW FEED", refuse all price-dependent ` +
+          `calls, do NOT estimate or reuse old prices, and tell the user the feed is down. ` +
+          `Re-check with market_feed_status before quoting anything.`
+        : '';
 
       // Inject the doctrine logic as a master prompt overriding the default agent identity
       return {
-        systemPrompt: MASTER_SYSTEM_PROMPT
+        systemPrompt: MASTER_SYSTEM_PROMPT + blindBanner
       };
     });
 
