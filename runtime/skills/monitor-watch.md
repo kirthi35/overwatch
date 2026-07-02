@@ -77,6 +77,18 @@ If the thesis needs logic the generic gates can't express, hand-write a daemon
 per `monitor-builder.md` and pass `mode:"daemon"` to `arm_monitor` so the shared
 daemon skips that symbol (no double-polling).
 
+## Reading status is NOT a live price (DATA INTEGRITY)
+The monitor JSON (`~/.overwatch/monitors/<name>.json`) is CONFIG plus a
+`state` block the daemon writes. `state.lastLtp` / `state.lastPoll` is a PAST,
+timestamped reading — NOT the current price. Reading this file is NOT a quote.
+- To report a LIVE price, make a fresh `get_quotes_and_depth` (or equivalent)
+  call THIS turn. If it fails, you are BLIND — say so; do not read the file and
+  present its number as "now".
+- If you cite `state.lastLtp`, label it `last polled <state.lastPoll>, STALE`.
+- Do not claim a monitor is "live / polling now" from the file alone — confirm
+  with `market_feed_status` (feed reachable AND monitord running).
+- Never invent a tick-by-tick sequence across repeated "check" requests.
+
 ## Managing
 `monitorctl list` shows armed monitors + the running daemon.
 To stop watching, call the **`disarm_monitor`** tool with the monitor `name`
