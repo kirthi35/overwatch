@@ -57,6 +57,7 @@ export async function attachPersistence(
     flushing = (async () => {
       const msgs = session.messages as unknown as Array<{ role: string; content: unknown }>;
       if (msgs.length > persistedCount) {
+        const wasEmpty = persistedCount === 0;
         const batch = db.batch();
         for (let i = persistedCount; i < msgs.length; i++) {
           const m = msgs[i];
@@ -68,7 +69,14 @@ export async function attachPersistence(
             ts: new Date().toISOString(),
           });
         }
-        batch.set(convo, { updatedAt: new Date().toISOString(), lastStats: safeStats(session) }, { merge: true });
+        const convoUpdate: Record<string, unknown> = { updatedAt: new Date().toISOString(), lastStats: safeStats(session) };
+        // On the first turn, title the conversation from the first user message.
+        if (wasEmpty) {
+          const firstUser = msgs.find((m) => m.role === 'user');
+          const title = extractText(firstUser?.content).trim().replace(/\s+/g, ' ').slice(0, 60);
+          if (title) convoUpdate.title = title;
+        }
+        batch.set(convo, convoUpdate, { merge: true });
         await batch.commit();
         persistedCount = msgs.length;
       }

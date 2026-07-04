@@ -46,4 +46,9 @@ export async function createConversation(title?: string, model?: { provider: str
   return (await res.json()).cid as string;
 }
 
+export async function deleteConversation(cid: string): Promise<void> {
+  const res = await fetch(`${API_URL}/conversations/${cid}`, { method: 'DELETE', headers: await authHeaders() });
+  if (!res.ok) throw new Error(`deleteConversation failed: ${res.status}`);
+}
+
 export { authHeaders };

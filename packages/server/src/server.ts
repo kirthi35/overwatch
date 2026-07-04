@@ -21,7 +21,7 @@ export async function createServer(deps: ServerDeps): Promise<FastifyInstance> {
 
   await app.register(cors, {
     origin: deps.corsOrigin ?? true,
-    methods: ['GET', 'POST', 'OPTIONS'],
+    methods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Authorization', 'Content-Type'],
   });
 
@@ -79,6 +79,16 @@ export async function createServer(deps: ServerDeps): Promise<FastifyInstance> {
     const now = new Date().toISOString();
     await ref.set({ title: body.title || 'New chat', model: body.model ?? null, createdAt: now, updatedAt: now });
     reply.send({ cid: ref.id });
+  });
+
+  // Delete a conversation (disposes any warm session, then recursive-deletes its docs).
+  app.delete('/conversations/:cid', async (req, reply) => {
+    const uid = await auth(req, reply);
+    if (!uid) return;
+    const { cid } = req.params as { cid: string };
+    await deps.pool.dispose(`${uid}:${cid}`).catch(() => {});
+    await deps.db.recursiveDelete(deps.db.doc(`users/${uid}/conversations/${cid}`));
+    reply.send({ ok: true });
   });
 
   // Send a prompt; the turn's events flow out the SSE stream, completed messages persist.
