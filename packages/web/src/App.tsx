@@ -102,15 +102,24 @@ function MainApp() {
 function Onboarding({ onDone }: { onDone: () => void }) {
   const [groww, setGroww] = useState('');
   const [anthropic, setAnthropic] = useState('');
+  const [ollama, setOllama] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
+    if (!anthropic.trim() && !ollama.trim()) {
+      setErr('Provide at least one LLM key (Anthropic or Ollama Cloud/GLM).');
+      return;
+    }
     setBusy(true);
     setErr('');
     try {
-      await saveSecrets({ growwToken: groww.trim(), anthropicKey: anthropic.trim() || undefined });
+      await saveSecrets({
+        growwToken: groww.trim(),
+        anthropicKey: anthropic.trim() || undefined,
+        ollamaKey: ollama.trim() || undefined,
+      });
       onDone();
     } catch (e: any) {
       setErr(e.message ?? String(e));
@@ -122,9 +131,10 @@ function Onboarding({ onDone }: { onDone: () => void }) {
     <div className="flex h-full items-center justify-center">
       <form onSubmit={submit} className="w-96 rounded-xl border border-gray-800 bg-gray-900/60 p-6 space-y-3">
         <h2 className="text-lg font-semibold">Connect your keys</h2>
-        <p className="text-xs text-gray-500">Stored encrypted, per-user. Groww token must be read-only (no trade scope).</p>
+        <p className="text-xs text-gray-500">Stored encrypted, per-user. Groww token must be read-only (no trade scope). Provide at least one LLM key.</p>
         <input className="w-full rounded-lg border border-gray-800 bg-gray-950 px-3 py-2 text-sm" placeholder="Groww read-only token" value={groww} onChange={(e) => setGroww(e.target.value)} />
-        <input className="w-full rounded-lg border border-gray-800 bg-gray-950 px-3 py-2 text-sm" placeholder="Anthropic API key (sk-ant-…)" value={anthropic} onChange={(e) => setAnthropic(e.target.value)} />
+        <input className="w-full rounded-lg border border-gray-800 bg-gray-950 px-3 py-2 text-sm" placeholder="Anthropic API key (sk-ant-…) — optional" value={anthropic} onChange={(e) => setAnthropic(e.target.value)} />
+        <input className="w-full rounded-lg border border-gray-800 bg-gray-950 px-3 py-2 text-sm" placeholder="Ollama Cloud key (GLM-5.2) — optional" value={ollama} onChange={(e) => setOllama(e.target.value)} />
         <button disabled={busy || !groww.trim()} className="w-full rounded-lg bg-emerald-600 py-2 text-sm font-medium hover:bg-emerald-500 disabled:opacity-50">
           {busy ? 'Saving…' : 'Save & continue'}
         </button>
