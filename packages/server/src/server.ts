@@ -162,6 +162,9 @@ export async function createServer(deps: ServerDeps): Promise<FastifyInstance> {
       reply.code(400).send({ error: e.message });
       return;
     }
+    // hijack() bypasses Fastify's response pipeline, so @fastify/cors never runs on
+    // this raw SSE response — set CORS headers manually (reflect the request origin).
+    const origin = (req.headers.origin as string) || '*';
     reply.hijack();
     const raw = reply.raw;
     raw.writeHead(200, {
@@ -169,6 +172,8 @@ export async function createServer(deps: ServerDeps): Promise<FastifyInstance> {
       'Cache-Control': 'no-cache, no-transform',
       Connection: 'keep-alive',
       'X-Accel-Buffering': 'no',
+      'Access-Control-Allow-Origin': origin,
+      Vary: 'Origin',
     });
     raw.write(': connected\n\n');
     const sink = (evt: unknown) => {
