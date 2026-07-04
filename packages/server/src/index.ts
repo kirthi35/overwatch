@@ -14,6 +14,7 @@ export { SessionPool } from './pool.js';
 export type { PoolEntry, PoolOptions, EventSink } from './pool.js';
 export { attachPersistence } from './persistence.js';
 export type { Persistence } from './persistence.js';
+export { generateTitle, buildTranscript } from './title.js';
 export { attachAlertRouter } from './alert-router.js';
 export type { AlertRouter } from './alert-router.js';
 export { createServer } from './server.js';

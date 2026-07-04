@@ -1,7 +1,7 @@
 import type { Firestore } from 'firebase-admin/firestore';
 import type { AgentSession } from '@earendil-works/pi-coding-agent';
 import type { UserContext } from '@overwatch/core';
-import { generateTitle } from './title.js';
+import { generateTitle, buildTranscript } from './title.js';
 
 // Mirror completed messages + turn stats to Firestore for the UI. The live SSE
 // stream carries token-by-token updates; here we persist only COMPLETED messages
@@ -93,10 +93,9 @@ export async function attachPersistence(
         // First turn: generate a proper LLM title (async) — replaces the interim
         // first-message title once ready. Best-effort; failures keep the interim.
         if (wasEmpty && u) {
-          const firstUser = msgs.find((m) => m.role === 'user');
-          const seed = extractText(firstUser?.content).trim();
-          if (seed) {
-            void generateTitle(u, seed)
+          const transcript = buildTranscript(msgs);
+          if (transcript) {
+            void generateTitle(u, transcript)
               .then((title) => {
                 if (title) return convo.set({ title }, { merge: true });
               })

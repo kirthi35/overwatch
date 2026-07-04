@@ -8,15 +8,30 @@ function extractText(content: unknown): string {
   return '';
 }
 
-// Generate a concise chat title with the user's own LLM — a cheap one-shot with NO
-// doctrine, Groww, or tools. Returns null on any failure (caller keeps the interim
-// first-message title). Uses the user's default model (GLM or Claude).
-export async function generateTitle(u: UserContext, seed: string): Promise<string | null> {
+// Build a compact transcript (user + assistant prose only) for titling, capped so the
+// title call stays cheap. Each message trimmed; overall length bounded.
+export function buildTranscript(messages: Array<{ role: string; content: unknown }>, cap = 2500): string {
+  const lines: string[] = [];
+  for (const m of messages) {
+    if (m.role !== 'user' && m.role !== 'assistant') continue;
+    const t = extractText(m.content).trim().replace(/\s+/g, ' ');
+    if (!t) continue;
+    lines.push(`${m.role === 'user' ? 'User' : 'Overwatch'}: ${t.slice(0, 400)}`);
+    if (lines.join('\n').length > cap) break;
+  }
+  return lines.join('\n').slice(0, cap);
+}
+
+// Generate a concise chat title with the user's own LLM from the WHOLE conversation
+// transcript — a cheap doctrine-free/tool-free one-shot. Returns null on failure.
+export async function generateTitle(u: UserContext, transcript: string): Promise<string | null> {
+  if (!transcript.trim()) return null;
   const titleExt: ExtensionFactory = (api) => {
     api.on('before_agent_start', () => ({
       systemPrompt:
-        'You generate concise chat titles. Reply with ONLY a 3 to 6 word title in Title Case — ' +
-        'no quotes, no trailing punctuation, no preamble, no explanation.',
+        'You generate concise chat titles. Given a conversation, reply with ONLY a 3 to 6 word ' +
+        'title in Title Case that captures its main topic — no quotes, no trailing punctuation, ' +
+        'no preamble, no explanation.',
     }));
   };
 
@@ -29,7 +44,7 @@ export async function generateTitle(u: UserContext, seed: string): Promise<strin
       if (e.type === 'agent_end') resolveEnd();
     });
     const to = setTimeout(() => resolveEnd(), 30000);
-    await session.prompt(`Title this conversation. The first message was: "${seed.slice(0, 300)}"`);
+    await session.prompt(`Generate a title for this conversation:\n\n${transcript}`);
     await ended;
     clearTimeout(to);
     unsub();
