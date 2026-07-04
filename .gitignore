@@ -2,6 +2,11 @@
 .env
 .env.*
 !.env.example
+# Firebase Admin service-account keys + master secret keys
+*-firebase-adminsdk-*.json
+**/serviceAccount*.json
+*.secret.key
+secret.key
 
 # build output
 dist/

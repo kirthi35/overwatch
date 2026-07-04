@@ -1,0 +1,52 @@
+rules_version = '2';
+
+// Overwatch Firestore security rules.
+// - Per-user data (users/{uid}/**) is OWNER-ONLY.
+// - secrets/ has NO client allow -> default deny (only the Admin SDK reads it,
+//   and the Admin SDK bypasses rules). Never client-readable or client-writable.
+// - Global doctrine skills are read-only to any signed-in user.
+// Subcollections are enumerated explicitly (rather than a recursive {document=**})
+// so a broad allow can never accidentally expose secrets/.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isOwner(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+
+    match /users/{uid} {
+      // The user profile document.
+      allow read, write: if isOwner(uid);
+
+      match /conversations/{cid} {
+        allow read, write: if isOwner(uid);
+        match /messages/{mid} {
+          allow read, write: if isOwner(uid);
+        }
+      }
+      match /monitors/{monitorId} {
+        allow read, write: if isOwner(uid);
+      }
+      match /theses/{thesisId} {
+        allow read, write: if isOwner(uid);
+      }
+      match /alerts/{alertId} {
+        allow read, write: if isOwner(uid);
+      }
+      match /journal/{tradeId} {
+        allow read, write: if isOwner(uid);
+      }
+      match /settings/{settingId} {
+        allow read, write: if isOwner(uid);
+      }
+
+      // users/{uid}/secrets/** — intentionally NO rule => default deny for clients.
+    }
+
+    // Global doctrine skills: any signed-in user may read; nobody writes from a client.
+    match /skills/{skillId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+  }
+}

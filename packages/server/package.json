@@ -1,0 +1,16 @@
+{
+  "name": "@overwatch/server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "gen-secret": "node -e \"console.log(require('crypto').randomBytes(32).toString('base64'))\"",
+    "seed-skills": "node dist/scripts/seed-skills.js"
+  },
+  "dependencies": {
+    "@overwatch/core": "*",
+    "firebase-admin": "^13.0.0"
+  }
+}
