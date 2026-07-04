@@ -1,4 +1,3 @@
-import * as path from 'path';
 import type { Firestore } from 'firebase-admin/firestore';
 import type { AgentSession, ModelRegistry } from '@earendil-works/pi-coding-agent';
 import { buildUserSession } from './session-builder.js';
@@ -27,8 +26,6 @@ export interface PoolOptions {
   maxWarm?: number;
   /** Idle grace before disposing a session with no attached SSE clients (ms). */
   idleMs?: number;
-  /** Root dir for Pi's local JSONL hot layer: <root>/<uid>/<cid>. Omit -> in-memory. */
-  sessionsRoot?: string;
 }
 
 // One warm AgentSession per (uid, cid). Lazy-created; kept alive while an SSE client
@@ -58,10 +55,23 @@ export class SessionPool {
     return p;
   }
 
+  // Load the prior conversation (user/assistant text) from Firestore, in seq order.
+  private async loadSeed(uid: string, cid: string): Promise<Array<{ role: 'user' | 'assistant'; content: string }>> {
+    const snap = await this.db.collection(`users/${uid}/conversations/${cid}/messages`).orderBy('seq', 'asc').get();
+    const out: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+    for (const d of snap.docs) {
+      const m = d.data() as { role?: string; content?: unknown };
+      if (m.role !== 'user' && m.role !== 'assistant') continue;
+      const content = typeof m.content === 'string' ? m.content : '';
+      if (content.trim()) out.push({ role: m.role, content });
+    }
+    return out;
+  }
+
   private async build(uid: string, cid: string, model?: { provider: string; id: string }): Promise<PoolEntry> {
     const u = await buildUserContext(this.db, uid, cid);
-    const sessionsDir = this.opts.sessionsRoot ? path.join(this.opts.sessionsRoot, uid, cid) : undefined;
-    const { session, registry } = await buildUserSession(u, { model, sessionsDir });
+    const seedMessages = await this.loadSeed(uid, cid);
+    const { session, registry } = await buildUserSession(u, { model, seedMessages });
     const persistence = await attachPersistence(session, this.db, uid, cid, u);
     // Route this conversation's monitor fires into the live session (online) and
     // replay any that fired while it was cold (open-time).

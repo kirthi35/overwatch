@@ -23,8 +23,6 @@ import { makeOverwatchExtension, type UserContext } from '@overwatch/core';
 export interface BuildSessionOptions {
   /** Desired model (from the conversation's saved choice); falls back to the user's provider default. */
   model?: { provider: string; id: string };
-  /** Where Pi writes its native session JSONL (the local hot layer). Defaults to a temp dir. */
-  sessionsDir?: string;
   /** Server-owned Pi config dir (kept clean so no stray on-disk extensions/skills load). */
   agentDir?: string;
   /** Per-session scratch cwd. Defaults to a temp dir. */
@@ -34,6 +32,9 @@ export interface BuildSessionOptions {
   /** Skip the Overwatch doctrine extension (no master prompt, Groww, or custom tools).
    *  Used for cheap side tasks like title generation. */
   noDoctrine?: boolean;
+  /** Prior conversation to seed into the (in-memory) session so the model has full
+   *  context on resume — from the durable store, in seq order. */
+  seedMessages?: Array<{ role: 'user' | 'assistant'; content: string }>;
 }
 
 const GLM_MODEL_DEFAULTS = { reasoning: false, input: ['text'] as ('text' | 'image')[], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 128000, maxTokens: 16384 };
@@ -118,9 +119,31 @@ export async function buildUserSession(u: UserContext, opts: BuildSessionOptions
   });
 
   const model = pickModel(services.modelRegistry, u, opts.model);
-  const sessionManager = opts.sessionsDir
-    ? SessionManager.create(cwd, opts.sessionsDir)
-    : SessionManager.inMemory(cwd);
+  const sessionManager = SessionManager.inMemory(cwd);
+
+  // Seed prior conversation so the model has full context on resume (box-independent;
+  // works for imported + evicted conversations). Text-only user/assistant turns.
+  if (opts.seedMessages?.length) {
+    const now = Date.now();
+    const zeroUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
+    const mm: any = model;
+    for (const s of opts.seedMessages) {
+      if (s.role === 'user') {
+        sessionManager.appendMessage({ role: 'user', content: [{ type: 'text', text: s.content }], timestamp: now } as any);
+      } else {
+        sessionManager.appendMessage({
+          role: 'assistant',
+          content: [{ type: 'text', text: s.content }],
+          api: mm?.api ?? 'anthropic-messages',
+          provider: mm?.provider ?? 'anthropic',
+          model: mm?.id ?? 'unknown',
+          usage: zeroUsage,
+          stopReason: 'stop',
+          timestamp: now,
+        } as any);
+      }
+    }
+  }
 
   const { session } = await createAgentSessionFromServices({
     services,

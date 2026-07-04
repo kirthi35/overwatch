@@ -1,5 +1,3 @@
-import * as os from 'os';
-import * as path from 'path';
 import { loadDotenv } from './env.js';
 import { getDb } from './firebase.js';
 import { SessionPool } from './pool.js';
@@ -11,11 +9,10 @@ loadDotenv();
 
 // Entry point for the Overwatch agent server (the Fastify + SSE + POST API).
 // Env: OVERWATCH_FIREBASE_KEY (service account), OVERWATCH_SECRET_KEY (secrets
-// master key), PORT (default 8787), OVERWATCH_CORS_ORIGIN, OVERWATCH_SESSIONS_ROOT.
+// master key), PORT (default 8787), OVERWATCH_CORS_ORIGIN.
 async function main() {
   const db = getDb();
-  const sessionsRoot = process.env.OVERWATCH_SESSIONS_ROOT || path.join(os.homedir(), '.overwatch-server', 'sessions');
-  const pool = new SessionPool(db, { sessionsRoot });
+  const pool = new SessionPool(db);
   const app = await createServer({
     db,
     pool,

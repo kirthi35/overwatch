@@ -51,48 +51,42 @@ export async function attachPersistence(
 
   // Start the seq where Firestore already is, so a rehydrated session doesn't
   // double-write history.
+  // nextSeq = next Firestore doc number (monotonic, appends after existing docs).
+  // sessionCursor = how many of session.messages are already in the store (the seeded
+  // prior conversation) — decoupled from nextSeq so seeding a subset stays consistent.
   const existing = await messagesCol.count().get().catch(() => null);
-  let persistedCount = existing ? existing.data().count : (await messagesCol.get()).size;
+  let nextSeq = existing ? existing.data().count : (await messagesCol.get()).size;
+  const wasNew = nextSeq === 0;
+  let titled = !wasNew; // only brand-new conversations get an LLM title
+  let sessionCursor = (session.messages as unknown[]).length;
 
   let flushing: Promise<void> | null = null;
   async function flush(): Promise<void> {
     if (flushing) return flushing;
     flushing = (async () => {
       const msgs = session.messages as unknown as Array<{ role: string; content: unknown }>;
-      if (msgs.length > persistedCount) {
-        const wasEmpty = persistedCount === 0;
+      if (msgs.length > sessionCursor) {
+        // Store the FULL transcript (every message, incl. tool results) — Firestore is
+        // the complete record. The UI filters for display.
         const batch = db.batch();
-        for (let i = persistedCount; i < msgs.length; i++) {
+        for (let i = sessionCursor; i < msgs.length; i++) {
           const m = msgs[i];
-          // Don't mirror tool-result messages to the UI store — they're large raw JSON
-          // blobs the model consumes, not chat content. The full transcript (incl. tool
-          // results) stays in Pi's local JSONL. seq index is preserved for ordering.
-          if (m.role === 'toolResult' || m.role === 'tool') continue;
-          const text = extractText(m.content);
-          // Skip empty assistant messages (pure tool-call turns with no prose).
-          if (m.role === 'assistant' && !text.trim()) continue;
-          batch.set(messagesCol.doc(String(i).padStart(6, '0')), {
-            seq: i,
+          batch.set(messagesCol.doc(String(nextSeq).padStart(6, '0')), {
+            seq: nextSeq,
             role: m.role,
-            content: text,
+            content: extractText(m.content),
             raw: plain(m.content),
             ts: new Date().toISOString(),
           });
+          nextSeq++;
         }
-        const convoUpdate: Record<string, unknown> = { updatedAt: new Date().toISOString(), lastStats: safeStats(session) };
-        // On the first turn, title the conversation from the first user message.
-        if (wasEmpty) {
-          const firstUser = msgs.find((m) => m.role === 'user');
-          const title = extractText(firstUser?.content).trim().replace(/\s+/g, ' ').slice(0, 60);
-          if (title) convoUpdate.title = title;
-        }
-        batch.set(convo, convoUpdate, { merge: true });
+        batch.set(convo, { updatedAt: new Date().toISOString(), lastStats: safeStats(session) }, { merge: true });
         await batch.commit();
-        persistedCount = msgs.length;
+        sessionCursor = msgs.length;
 
-        // First turn: generate a proper LLM title (async) — replaces the interim
-        // first-message title once ready. Best-effort; failures keep the interim.
-        if (wasEmpty && u) {
+        // First turn of a new conversation: title it from the whole transcript (async).
+        if (!titled && u) {
+          titled = true;
           const transcript = buildTranscript(msgs);
           if (transcript) {
             void generateTitle(u, transcript)
