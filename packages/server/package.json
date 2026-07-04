@@ -6,12 +6,15 @@
   "main": "./dist/index.js",
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "start": "node dist/main.js",
     "gen-secret": "node -e \"console.log(require('crypto').randomBytes(32).toString('base64'))\"",
     "seed-skills": "node dist/scripts/seed-skills.js",
     "deploy-rules": "node dist/scripts/deploy-rules.js"
   },
   "dependencies": {
+    "@fastify/cors": "^11.2.0",
     "@overwatch/core": "*",
+    "fastify": "^5.9.0",
     "firebase-admin": "^13.0.0"
   }
 }

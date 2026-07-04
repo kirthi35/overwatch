@@ -41,7 +41,9 @@ function buildAuthAndRegistry(u: UserContext): { auth: AuthStorage; registry: Mo
   const auth = AuthStorage.inMemory();
   if (u.llm.anthropicKey) auth.setRuntimeApiKey('anthropic', u.llm.anthropicKey);
   const registry = ModelRegistry.create(auth);
-  if (u.llm.provider === 'glm' && u.llm.ollama) {
+  // Register the GLM provider whenever the user supplied Ollama creds — regardless of
+  // which provider is the default — so BOTH Claude and GLM models are pickable in-chat.
+  if (u.llm.ollama) {
     registry.registerProvider('ollama-cloud', {
       name: 'Ollama Cloud',
       baseUrl: u.llm.ollama.baseUrl,
@@ -51,6 +53,12 @@ function buildAuthAndRegistry(u: UserContext): { auth: AuthStorage; registry: Mo
     });
   }
   return { auth, registry };
+}
+
+/** List the models this user can pick (auth-filtered), without building a session. */
+export function listAvailableModels(u: UserContext): Array<{ provider: string; id: string; name: string }> {
+  const { registry } = buildAuthAndRegistry(u);
+  return availableModels(registry);
 }
 
 /** Which models this user can pick (auto-filtered by configured auth). */
