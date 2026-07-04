@@ -2,7 +2,6 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useCollection } from '../lib/useFirestore';
-import { saveSecrets } from '../lib/api';
 
 interface Skill {
   id: string;
@@ -16,10 +15,10 @@ export function SettingsTab({ uid }: { uid: string }) {
   return (
     <div className="mx-auto max-w-4xl space-y-6 p-6">
       <SkillsViewer />
-      <div className="grid gap-6 md:grid-cols-2">
-        <CredentialsCard />
-        <CapitalCard uid={uid} />
-      </div>
+      <CapitalCard uid={uid} />
+      <p className="text-xs text-gray-600">
+        LLM + Groww keys and the active model are configured in <code className="text-gray-500">.env</code> (dev mode).
+      </p>
     </div>
   );
 }
@@ -48,39 +47,6 @@ function SkillsViewer() {
           </div>
         ))}
       </div>
-    </section>
-  );
-}
-
-function CredentialsCard() {
-  const [groww, setGroww] = useState('');
-  const [anthropic, setAnthropic] = useState('');
-  const [ollama, setOllama] = useState('');
-  const [msg, setMsg] = useState('');
-
-  const submit = async (e: FormEvent) => {
-    e.preventDefault();
-    setMsg('');
-    try {
-      await saveSecrets({ growwToken: groww.trim(), anthropicKey: anthropic.trim() || undefined, ollamaKey: ollama.trim() || undefined });
-      setMsg('Saved.');
-      setGroww(''); setAnthropic(''); setOllama('');
-    } catch (e: any) {
-      setMsg(e.message ?? String(e));
-    }
-  };
-
-  return (
-    <section className="rounded-xl border border-gray-800 bg-gray-900/40 p-4">
-      <h3 className="mb-1 text-sm font-semibold">Credentials</h3>
-      <p className="mb-3 text-xs text-gray-500">Update stored keys (encrypted). Groww must be read-only.</p>
-      <form onSubmit={submit} className="space-y-2">
-        <input className="w-full rounded border border-gray-800 bg-gray-950 px-2 py-1.5 text-sm" placeholder="Groww token" value={groww} onChange={(e) => setGroww(e.target.value)} />
-        <input className="w-full rounded border border-gray-800 bg-gray-950 px-2 py-1.5 text-sm" placeholder="Anthropic key (optional)" value={anthropic} onChange={(e) => setAnthropic(e.target.value)} />
-        <input className="w-full rounded border border-gray-800 bg-gray-950 px-2 py-1.5 text-sm" placeholder="Ollama/GLM key (optional)" value={ollama} onChange={(e) => setOllama(e.target.value)} />
-        <button disabled={!groww.trim()} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-sm hover:bg-emerald-500 disabled:opacity-50">Save keys</button>
-        {msg && <p className="text-xs text-gray-400">{msg}</p>}
-      </form>
     </section>
   );
 }
