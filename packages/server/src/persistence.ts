@@ -61,10 +61,17 @@ export async function attachPersistence(
         const batch = db.batch();
         for (let i = persistedCount; i < msgs.length; i++) {
           const m = msgs[i];
+          // Don't mirror tool-result messages to the UI store — they're large raw JSON
+          // blobs the model consumes, not chat content. The full transcript (incl. tool
+          // results) stays in Pi's local JSONL. seq index is preserved for ordering.
+          if (m.role === 'toolResult' || m.role === 'tool') continue;
+          const text = extractText(m.content);
+          // Skip empty assistant messages (pure tool-call turns with no prose).
+          if (m.role === 'assistant' && !text.trim()) continue;
           batch.set(messagesCol.doc(String(i).padStart(6, '0')), {
             seq: i,
             role: m.role,
-            content: extractText(m.content),
+            content: text,
             raw: plain(m.content),
             ts: new Date().toISOString(),
           });

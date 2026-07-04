@@ -228,17 +228,29 @@ function ChatArea({ uid }: { uid: string }) {
   );
 }
 
+// Strip the agent-facing instructions from an injected monitor-event message,
+// leaving just the headline + raw alert for display.
+function cleanMonitor(text: string): string {
+  const head = text.split('ACT NOW')[0].trim();
+  return `🔔 ${head}`;
+}
+
 // Load prior messages from Firestore, then mount the runtime seeded with them.
+// Only user / assistant-text / monitor-event messages are shown as chat bubbles;
+// tool-result blobs and empty tool-only turns are dropped.
 function ChatThread({ cid, uid }: { cid: string; uid: string }) {
   const [initial, setInitial] = useState<ThreadMessageLike[] | null>(null);
   useEffect(() => {
     fetchMessages(uid, cid)
       .then((ms) =>
         setInitial(
-          ms.map((m) => ({
-            role: m.role === 'user' ? 'user' : m.role === 'system' ? 'system' : 'assistant',
-            content: m.content,
-          })),
+          ms
+            .filter((m) => m.role === 'user' || m.role === 'assistant' || m.role === 'custom')
+            .map((m) => ({
+              role: m.role === 'user' ? ('user' as const) : ('assistant' as const),
+              content: m.role === 'custom' ? cleanMonitor(m.content) : m.content,
+            }))
+            .filter((m) => m.content.trim() !== ''),
         ),
       )
       .catch(() => setInitial([]));
