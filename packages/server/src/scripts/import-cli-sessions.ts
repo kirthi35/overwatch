@@ -38,7 +38,7 @@ function listSessionFiles(): string[] {
 interface ParsedSession {
   cid: string;
   createdAt: string;
-  messages: Array<{ role: string; content: string; ts: string }>;
+  messages: Array<{ role: string; content: string; msg: unknown; ts: string }>;
 }
 
 function parseSession(file: string): ParsedSession | null {
@@ -54,15 +54,18 @@ function parseSession(file: string): ParsedSession | null {
     }
     if (e.type === 'session' && e.timestamp) createdAt = e.timestamp;
     if (e.type === 'message' && e.message) {
-      const role = e.message.role;
-      if (role !== 'user' && role !== 'assistant') continue;
-      const content = extractText(e.message.content).trim();
-      if (!content) continue;
+      // Store the FULL message (all roles, incl. toolResult) so the imported
+      // conversation resumes with complete tool context, just like the JSONL.
       const ms = e.message.timestamp;
-      messages.push({ role, content, ts: ms ? new Date(ms).toISOString() : e.timestamp || createdAt });
+      messages.push({
+        role: e.message.role ?? 'assistant',
+        content: extractText(e.message.content),
+        msg: e.message,
+        ts: ms ? new Date(ms).toISOString() : e.timestamp || createdAt,
+      });
     }
   }
-  if (messages.length === 0) return null;
+  if (!messages.some((m) => m.role === 'user' || m.role === 'assistant')) return null;
   // cid from the session-file uuid (after the last '_'); deterministic -> idempotent.
   const base = path.basename(file, '.jsonl');
   const uuid = base.includes('_') ? base.slice(base.lastIndexOf('_') + 1) : base;
@@ -98,7 +101,7 @@ async function main() {
     await convoRef.set({ title, model: null, createdAt: s.createdAt, updatedAt: s.createdAt, source: 'cli-import' });
     const batch = db.batch();
     s.messages.forEach((m, i) => {
-      batch.set(convoRef.collection('messages').doc(String(i).padStart(6, '0')), { seq: i, role: m.role, content: m.content, ts: m.ts });
+      batch.set(convoRef.collection('messages').doc(String(i).padStart(6, '0')), { seq: i, role: m.role, content: m.content, msg: m.msg, ts: m.ts });
     });
     await batch.commit();
     imported++;

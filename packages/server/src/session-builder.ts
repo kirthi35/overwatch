@@ -33,8 +33,9 @@ export interface BuildSessionOptions {
    *  Used for cheap side tasks like title generation. */
   noDoctrine?: boolean;
   /** Prior conversation to seed into the (in-memory) session so the model has full
-   *  context on resume — from the durable store, in seq order. */
-  seedMessages?: Array<{ role: 'user' | 'assistant'; content: string }>;
+   *  context on resume — from the durable store, in seq order. `msg` is the verbatim
+   *  Pi message (full tool context); `content` is a text fallback for older data. */
+  seedMessages?: Array<{ role: string; content: string; msg?: unknown }>;
 }
 
 const GLM_MODEL_DEFAULTS = { reasoning: false, input: ['text'] as ('text' | 'image')[], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 128000, maxTokens: 16384 };
@@ -121,26 +122,26 @@ export async function buildUserSession(u: UserContext, opts: BuildSessionOptions
   const model = pickModel(services.modelRegistry, u, opts.model);
   const sessionManager = SessionManager.inMemory(cwd);
 
-  // Seed prior conversation so the model has full context on resume (box-independent;
-  // works for imported + evicted conversations). Text-only user/assistant turns.
+  // Seed prior conversation so the model has FULL context on resume (incl. tool
+  // calls + results), box-independent. Replay each stored Pi message verbatim (`msg`);
+  // fall back to a text-only reconstruction for messages saved before full-message
+  // persistence (older/imported data).
   if (opts.seedMessages?.length) {
     const now = Date.now();
     const zeroUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
     const mm: any = model;
     for (const s of opts.seedMessages) {
-      if (s.role === 'user') {
-        sessionManager.appendMessage({ role: 'user', content: [{ type: 'text', text: s.content }], timestamp: now } as any);
-      } else {
-        sessionManager.appendMessage({
-          role: 'assistant',
-          content: [{ type: 'text', text: s.content }],
-          api: mm?.api ?? 'anthropic-messages',
-          provider: mm?.provider ?? 'anthropic',
-          model: mm?.id ?? 'unknown',
-          usage: zeroUsage,
-          stopReason: 'stop',
-          timestamp: now,
-        } as any);
+      try {
+        if (s.msg) {
+          sessionManager.appendMessage(s.msg as any); // verbatim — full tool context
+        } else if (s.role === 'user') {
+          sessionManager.appendMessage({ role: 'user', content: [{ type: 'text', text: s.content }], timestamp: now } as any);
+        } else if (s.role === 'assistant' && s.content.trim()) {
+          sessionManager.appendMessage({ role: 'assistant', content: [{ type: 'text', text: s.content }], api: mm?.api ?? 'anthropic-messages', provider: mm?.provider ?? 'anthropic', model: mm?.id ?? 'unknown', usage: zeroUsage, stopReason: 'stop', timestamp: now } as any);
+        }
+        // else (toolResult/custom without a verbatim msg) — skip; can't reconstruct safely.
+      } catch {
+        /* skip a message that won't replay rather than fail the whole session */
       }
     }
   }

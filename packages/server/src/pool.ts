@@ -55,17 +55,15 @@ export class SessionPool {
     return p;
   }
 
-  // Load the prior conversation (user/assistant text) from Firestore, in seq order.
-  private async loadSeed(uid: string, cid: string): Promise<Array<{ role: 'user' | 'assistant'; content: string }>> {
+  // Load the full prior conversation from Firestore (in seq order) to seed the session.
+  // `msg` is the verbatim Pi message (replayed for full tool context); content is the
+  // text fallback for messages stored before full-message persistence.
+  private async loadSeed(uid: string, cid: string): Promise<Array<{ role: string; content: string; msg?: unknown }>> {
     const snap = await this.db.collection(`users/${uid}/conversations/${cid}/messages`).orderBy('seq', 'asc').get();
-    const out: Array<{ role: 'user' | 'assistant'; content: string }> = [];
-    for (const d of snap.docs) {
-      const m = d.data() as { role?: string; content?: unknown };
-      if (m.role !== 'user' && m.role !== 'assistant') continue;
-      const content = typeof m.content === 'string' ? m.content : '';
-      if (content.trim()) out.push({ role: m.role, content });
-    }
-    return out;
+    return snap.docs.map((d) => {
+      const m = d.data() as { role?: string; content?: unknown; msg?: unknown };
+      return { role: m.role ?? 'assistant', content: typeof m.content === 'string' ? m.content : '', msg: m.msg };
+    });
   }
 
   private async build(uid: string, cid: string, model?: { provider: string; id: string }): Promise<PoolEntry> {

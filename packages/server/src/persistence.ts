@@ -74,8 +74,8 @@ export async function attachPersistence(
           batch.set(messagesCol.doc(String(nextSeq).padStart(6, '0')), {
             seq: nextSeq,
             role: m.role,
-            content: extractText(m.content),
-            raw: plain(m.content),
+            content: extractText(m.content), // text, for the UI
+            msg: plain(m), // the full Pi message, replayed verbatim on resume (JSONL-style)
             ts: new Date().toISOString(),
           });
           nextSeq++;
