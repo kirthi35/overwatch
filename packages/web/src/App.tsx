@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import type { User } from 'firebase/auth';
-import { AssistantRuntimeProvider, useLocalRuntime, ThreadPrimitive, ComposerPrimitive, MessagePrimitive, type ThreadMessageLike } from '@assistant-ui/react';
+import { AssistantRuntimeProvider, useLocalRuntime, ThreadPrimitive, ComposerPrimitive, MessagePrimitive, useMessagePartText, type ThreadMessageLike } from '@assistant-ui/react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { onAuthChange, signInGoogle, signInEmail, registerEmail, signOutUser, auth } from './firebase';
 import { listModels, saveSecrets, createConversation, deleteConversation, type ModelInfo } from './lib/api';
 import { makeChatAdapter } from './lib/runtime';
@@ -296,11 +298,21 @@ function UserMessage() {
   );
 }
 
+// Render assistant text parts as markdown (GFM tables/headers/bold), streaming-safe.
+function MarkdownText() {
+  const part = useMessagePartText();
+  return (
+    <div className="prose prose-invert prose-sm max-w-none prose-headings:mt-3 prose-headings:mb-1 prose-p:my-1.5 prose-table:my-2 prose-th:px-2 prose-th:py-1 prose-td:px-2 prose-td:py-1 prose-table:text-xs prose-pre:bg-gray-950 prose-code:text-emerald-300">
+      <ReactMarkdown remarkPlugins={[remarkGfm]}>{part.text}</ReactMarkdown>
+    </div>
+  );
+}
+
 function AssistantMessage() {
   return (
     <MessagePrimitive.Root className="flex justify-start">
-      <div className="max-w-[80%] whitespace-pre-wrap rounded-2xl bg-gray-800/80 px-4 py-2 text-sm">
-        <MessagePrimitive.Parts />
+      <div className="max-w-[85%] rounded-2xl bg-gray-800/80 px-4 py-2 text-sm">
+        <MessagePrimitive.Parts components={{ Text: MarkdownText }} />
       </div>
     </MessagePrimitive.Root>
   );
