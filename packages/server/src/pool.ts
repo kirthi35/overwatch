@@ -4,6 +4,7 @@ import type { AgentSession, ModelRegistry } from '@earendil-works/pi-coding-agen
 import { buildUserSession } from './session-builder.js';
 import { buildUserContext } from './user-context.js';
 import { attachPersistence, type Persistence } from './persistence.js';
+import { attachAlertRouter, type AlertRouter } from './alert-router.js';
 
 export type EventSink = (evt: unknown) => void;
 
@@ -14,6 +15,7 @@ export interface PoolEntry {
   session: AgentSession;
   registry: ModelRegistry;
   persistence: Persistence;
+  alertRouter: AlertRouter;
   unsub: () => void;
   sinks: Set<EventSink>;
   lastUsed: number;
@@ -61,6 +63,9 @@ export class SessionPool {
     const sessionsDir = this.opts.sessionsRoot ? path.join(this.opts.sessionsRoot, uid, cid) : undefined;
     const { session, registry } = await buildUserSession(u, { model, sessionsDir });
     const persistence = await attachPersistence(session, this.db, uid, cid);
+    // Route this conversation's monitor fires into the live session (online) and
+    // replay any that fired while it was cold (open-time).
+    const alertRouter = attachAlertRouter(session, this.db, uid, cid);
     const sinks = new Set<EventSink>();
     const unsub = session.subscribe((evt) => {
       for (const s of sinks) {
@@ -71,7 +76,7 @@ export class SessionPool {
         }
       }
     });
-    const entry: PoolEntry = { key: this.key(uid, cid), uid, cid, session, registry, persistence, unsub, sinks, lastUsed: Date.now() };
+    const entry: PoolEntry = { key: this.key(uid, cid), uid, cid, session, registry, persistence, alertRouter, unsub, sinks, lastUsed: Date.now() };
     this.entries.set(entry.key, entry);
     this.touch(entry);
     this.evictIfNeeded();
@@ -123,6 +128,7 @@ export class SessionPool {
       /* best effort */
     }
     e.persistence.detach();
+    e.alertRouter.detach();
     e.unsub();
     try {
       e.session.dispose();
