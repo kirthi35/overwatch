@@ -2,6 +2,7 @@
 // server (phase 3). Consumes @overwatch/core.
 
 export { initFirebase, getDb, getAuthAdmin, verifyIdToken } from './firebase.js';
+export { loadDotenv, devCredsFromEnv, DEV_CREDS_ENABLED } from './env.js';
 export { encryptSecret, decryptSecret } from './crypto.js';
 export { FirestoreStore } from './firestore-store.js';
 export { SecretsStore } from './secrets-store.js';

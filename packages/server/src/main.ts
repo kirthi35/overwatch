@@ -1,8 +1,13 @@
 import * as os from 'os';
 import * as path from 'path';
+import { loadDotenv } from './env.js';
 import { getDb } from './firebase.js';
 import { SessionPool } from './pool.js';
 import { createServer } from './server.js';
+
+// Load repo-root .env into process.env before anything reads config (Firebase key,
+// secret key, CORS, port) — so dev needs no manual exports.
+loadDotenv();
 
 // Entry point for the Overwatch agent server (the Fastify + SSE + POST API).
 // Env: OVERWATCH_FIREBASE_KEY (service account), OVERWATCH_SECRET_KEY (secrets

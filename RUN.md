@@ -1,53 +1,40 @@
 # Running the Overwatch web app (dev)
 
 Three processes: **server** (agent API), **worker** (monitor poller), **web** (React SPA).
-Backend needs two secrets in the environment.
 
-## 0. One-time setup
+## Dev mode (single operator) — reads `.env`, no manual setup
+
+The repo `.env` already holds everything (Groww token, Anthropic key, `OLLAMA_API_KEY`,
+`OVERWATCH_LLM=glm`, plus the appended `OVERWATCH_FIREBASE_KEY`, `OVERWATCH_SECRET_KEY`,
+and `OVERWATCH_DEV_CREDS_FROM_ENV=1`). The server + worker load `.env` on startup — **no
+`export`s needed** — and with the dev flag set, a logged-in user's creds come straight from
+`.env`, so **no browser onboarding** either.
 
 ```bash
 npm install
-
-# Build the TS packages (web uses Vite, no prebuild needed for dev)
 npm run build -w @overwatch/core
 npm run build -w @overwatch/server
 npm run build -w @overwatch/worker
 
-# Generate a STABLE secrets master key ONCE and keep it (it decrypts stored creds —
-# if it changes, previously-saved user keys can't be decrypted).
-npm run gen-secret -w @overwatch/server   # prints a base64 key; save it
+# three terminals (no env exports needed):
+npm start -w @overwatch/server    # http://localhost:8787  (GET /health)
+npm start -w @overwatch/worker    # monitor poller (NSE hours)
+npm run dev   -w @overwatch/web    # http://localhost:5173
 ```
 
-Set these env vars for the server + worker (e.g. in your shell profile or a process manager):
+Then open http://localhost:5173 → **sign in** (Google / email) → you land straight in
+**Chat** (GLM-5.2, since `OVERWATCH_LLM=glm`). Ask “Is the Groww feed live?” or
+“Analyse Paras Defence”, or arm a monitor.
 
-```bash
-export OVERWATCH_FIREBASE_KEY=/absolute/path/to/overwatch-3a83a-firebase-adminsdk-*.json
-export OVERWATCH_SECRET_KEY=<the base64 key from gen-secret>   # STABLE
-# optional: PORT=8787  OVERWATCH_CORS_ORIGIN=http://localhost:5173  OVERWATCH_SESSIONS_ROOT=~/.overwatch-server/sessions
-```
-
-> The service-account JSON and OVERWATCH_SECRET_KEY are secrets — never commit them.
+> `.env` holds real secrets and is gitignored — never commit it. `OVERWATCH_SECRET_KEY`
+> must stay STABLE (it decrypts any *onboarded* creds; the dev-fallback path doesn't need it).
 > The Firebase **web** config in `packages/web/src/firebase.ts` is public and fine to commit.
 
-## 1. Start the backend
+## Production (multi-tenant BYOK)
 
-```bash
-npm start -w @overwatch/server   # http://localhost:8787  (GET /health to check)
-npm start -w @overwatch/worker   # monitor poller (ticks during NSE hours)
-```
-
-## 2. Start the web app
-
-```bash
-npm run dev -w @overwatch/web     # http://localhost:5173
-# (set VITE_API_URL if the server isn't on http://localhost:8787)
-```
-
-## 3. Use it
-
-1. Open http://localhost:5173 → sign in (Google or email/password).
-2. Onboard your keys: **Groww read-only token** + **Anthropic API key** (must have credit).
-3. Chat. Ask “Is the Groww feed live?” or “Analyse Paras Defence”, or arm a monitor.
+Unset `OVERWATCH_DEV_CREDS_FROM_ENV`. Each user signs in and onboards their **own** Groww
+token + LLM key via the UI form → stored encrypted per-user. Provide
+`OVERWATCH_FIREBASE_KEY` + a stable `OVERWATCH_SECRET_KEY` via a real secret store, not `.env`.
 
 ## Notes
 

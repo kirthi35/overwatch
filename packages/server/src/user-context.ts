@@ -5,6 +5,7 @@ import {
   FirestoreStore,
 } from './firestore-store.js';
 import { SecretsStore, type UserCreds } from './secrets-store.js';
+import { loadDotenv, devCredsFromEnv, DEV_CREDS_ENABLED } from './env.js';
 import { DEFAULT_GLM_MODEL, DEFAULT_GLM_MODELS, DEFAULT_OLLAMA_BASE_URL, type UserContext } from '@overwatch/core';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -37,7 +38,12 @@ export async function buildUserContext(
   uid: string,
   conversationId?: string,
 ): Promise<UserContext> {
-  const creds = await new SecretsStore(db, uid).get();
+  let creds = await new SecretsStore(db, uid).get();
+  // DEV single-operator convenience: fall back to .env + keychain creds so you skip
+  // the browser onboarding. Only when OVERWATCH_DEV_CREDS_FROM_ENV=1.
+  if ((!creds || !creds.growwToken) && DEV_CREDS_ENABLED()) {
+    creds = devCredsFromEnv(loadDotenv());
+  }
   if (!creds || !creds.growwToken) {
     throw new Error('no credentials onboarded for this user');
   }

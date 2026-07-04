@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@fastify/cors": "^11.2.0",
+    "@napi-rs/keyring": "^1.3.0",
     "@overwatch/core": "*",
     "fastify": "^5.9.0",
     "firebase-admin": "^13.0.0"

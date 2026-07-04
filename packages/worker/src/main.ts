@@ -1,5 +1,8 @@
-import { getDb } from '@overwatch/server';
+import { getDb, loadDotenv } from '@overwatch/server';
 import { MonitorWorker } from './worker.js';
+
+// Load repo-root .env before Firebase init (no manual exports in dev).
+loadDotenv();
 
 // Entry point for the Overwatch monitor worker (the multi-tenant poller).
 // Env: OVERWATCH_FIREBASE_KEY (service account), OVERWATCH_SECRET_KEY (to decrypt
