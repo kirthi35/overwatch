@@ -1,8 +1,9 @@
 import { ExtensionFactory, ExtensionAPI } from '@earendil-works/pi-coding-agent';
-import { setupGrowwMCP, growwStatus } from './mcp-bridge.js';
+import { GrowwMcpBridge } from './mcp-bridge.js';
 import { setupAutoLoader } from './auto-loader.js';
 import { registerCustomTools } from './custom-tools.js';
 import { setupAlertBridge } from './alert-bridge.js';
+import { UserContext } from './types.js';
 
 // The master doctrine prompt injected on every turn via before_agent_start.
 // This is the DATA INTEGRITY constitution — keep it byte-exact.
@@ -120,41 +121,55 @@ For each prompt: (1) decide which data you need and fetch via MCP/REST;
 before any entry call; (4) deliver a decisive, structured recommendation.
 `.trim();
 
-// The Overwatch doctrine extension factory. Wires the master prompt (with a
-// per-turn BLIND banner when the Groww feed is down), the Groww MCP tools, the
-// skill auto-loader, custom tools, and the alert bridge. Mode-agnostic: works in
-// the interactive CLI and headless/server contexts alike.
-export const overwatchExtension: ExtensionFactory = (api: ExtensionAPI) => {
-  api.on('before_agent_start', async (event) => {
-    // Connect to Groww MCP and register tools dynamically. Runs per query, so
-    // it re-attempts the connection each turn if a prior turn was blind.
-    const status = await setupGrowwMCP(api);
+export interface OverwatchExtensionOptions {
+  /** Wire the file-tailing alert bridge (CLI default). The server sets this false
+   *  and wires its own Firestore-listener-based surfacing (phase 5). */
+  alertBridge?: boolean;
+}
 
-    // If the live feed is down THIS turn, prepend a loud banner so the model
-    // knows it's blind and refuses to fabricate prices (DATA INTEGRITY rule 2).
-    const s = status || growwStatus();
-    const blindBanner = (!s.ready)
-      ? `\n\n---\n## ⚠️ LIVE FEED STATUS THIS TURN: DOWN\n` +
-        `The Groww MCP data feed is NOT connected right now` +
-        `${s.lastError ? ` (${s.lastError})` : ''}. You are BLIND on live market data. ` +
-        `Per DATA INTEGRITY: reply "🚫 BLIND — NO LIVE GROWW FEED", refuse all price-dependent ` +
-        `calls, do NOT estimate or reuse old prices, and tell the user the feed is down. ` +
-        `Re-check with market_feed_status before quoting anything.`
-      : '';
+// Build the Overwatch doctrine extension for ONE user. Wires the master prompt
+// (with a per-turn BLIND banner when that user's Groww feed is down), a per-user
+// GrowwMcpBridge, the skill auto-loader (over u.skillsDir), the custom tools
+// (store-backed), and — for the CLI — the file-tailing alert bridge. Mode-agnostic:
+// works in the interactive CLI and headless/server contexts alike.
+export function makeOverwatchExtension(
+  u: UserContext,
+  opts: OverwatchExtensionOptions = {},
+): ExtensionFactory {
+  const { alertBridge = true } = opts;
+  return (api: ExtensionAPI) => {
+    const groww = new GrowwMcpBridge(u.growwToken);
 
-    // Inject the doctrine logic as a master prompt overriding the default agent identity
-    return {
-      systemPrompt: MASTER_SYSTEM_PROMPT + blindBanner,
-    };
-  });
+    api.on('before_agent_start', async () => {
+      // Connect to Groww MCP and register tools dynamically. Runs per query, so
+      // it re-attempts the connection each turn if a prior turn was blind.
+      const s = await groww.setup(api);
 
-  // Wire up the dynamic skills auto-loader
-  setupAutoLoader(api);
+      // If the live feed is down THIS turn, prepend a loud banner so the model
+      // knows it's blind and refuses to fabricate prices (DATA INTEGRITY rule 2).
+      const blindBanner = (!s.ready)
+        ? `\n\n---\n## ⚠️ LIVE FEED STATUS THIS TURN: DOWN\n` +
+          `The Groww MCP data feed is NOT connected right now` +
+          `${s.lastError ? ` (${s.lastError})` : ''}. You are BLIND on live market data. ` +
+          `Per DATA INTEGRITY: reply "🚫 BLIND — NO LIVE GROWW FEED", refuse all price-dependent ` +
+          `calls, do NOT estimate or reuse old prices, and tell the user the feed is down. ` +
+          `Re-check with market_feed_status before quoting anything.`
+        : '';
 
-  // Register custom tools like console_log_alert
-  registerCustomTools(api);
+      // Inject the doctrine logic as a master prompt overriding the default agent identity
+      return {
+        systemPrompt: MASTER_SYSTEM_PROMPT + blindBanner,
+      };
+    });
 
-  // Watch the monitor daemon's alerts.log + state files and wake this chat
-  // when a monitor fires a terminal/CRITICAL event (see alert-bridge.ts).
-  setupAlertBridge(api);
-};
+    // Route the user prompt to the right doctrine skill(s) from the global skills dir.
+    setupAutoLoader(api, u.skillsDir);
+
+    // Register custom tools (console_log_alert, arm/disarm_monitor, write_thesis),
+    // all backed by this user's store.
+    registerCustomTools(api, u);
+
+    // CLI only: tail alerts.log + state files and wake the chat when a monitor fires.
+    if (alertBridge) setupAlertBridge(api);
+  };
+}

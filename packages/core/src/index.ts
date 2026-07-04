@@ -2,7 +2,8 @@
 // Consumed by @overwatch/cli (terminal), and (later) @overwatch/server and
 // @overwatch/worker. No terminal/UI assumptions live here.
 
-export { overwatchExtension, MASTER_SYSTEM_PROMPT } from './doctrine.js';
+export { makeOverwatchExtension, MASTER_SYSTEM_PROMPT } from './doctrine.js';
+export type { OverwatchExtensionOptions } from './doctrine.js';
 export {
   resolveLlmProvider,
   resolveGlmConfig,
@@ -14,6 +15,20 @@ export {
   DEFAULT_OLLAMA_BASE_URL,
 } from './llm-provider.js';
 export type { LlmProvider, GlmConfig } from './llm-provider.js';
-export { setupGrowwMCP, growwStatus, growwReady, callGroww } from './mcp-bridge.js';
+export { GrowwMcpBridge } from './mcp-bridge.js';
 export type { GrowwStatus } from './mcp-bridge.js';
 export { notifyTelegram, telegramEnabled } from './telegram.js';
+export { FileStore, sanitizeName } from './file-store.js';
+export { setupAutoLoader, scoreSkills } from './auto-loader.js';
+export { registerCustomTools } from './custom-tools.js';
+export type {
+  UserContext,
+  OverwatchStore,
+  Monitor,
+  MonitorGates,
+  MonitorState,
+  Alert,
+  AlertSeverity,
+  TelegramConfig,
+  OllamaConfig,
+} from './types.js';

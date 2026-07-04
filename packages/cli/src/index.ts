@@ -7,12 +7,15 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import {
-  overwatchExtension,
+  makeOverwatchExtension,
   resolveLlmProvider,
   resolveGlmConfig,
   registerOllamaProvider,
   glmPiArgs,
+  FileStore,
+  type UserContext,
 } from '@overwatch/core';
+import { ensureMonitord } from './monitord.js';
 
 import { main } from '@earendil-works/pi-coding-agent';
 
@@ -135,6 +138,7 @@ async function start() {
   // 1a. LLM credentials + provider selection. `piArgs` picks the model for Pi's
   // main(); empty = Pi's default (Anthropic).
   let piArgs: string[] = [];
+  let llm: UserContext['llm'];
   if (llmProvider === 'glm') {
     // GLM mode: Ollama Cloud key is REQUIRED; Anthropic key is optional (kept only
     // if already present, so a GLM-only operator isn't prompted for a Claude key).
@@ -152,6 +156,11 @@ async function start() {
     const glm = resolveGlmConfig(dotenv);
     registerOllamaProvider(glm);
     piArgs = glmPiArgs(glm.modelId);
+    llm = {
+      provider: 'glm',
+      anthropicKey: process.env.ANTHROPIC_API_KEY || undefined,
+      ollama: { apiKey: ollamaKey, baseUrl: glm.baseUrl, models: glm.models, modelId: glm.modelId },
+    };
     console.log(`[+] LLM: Ollama Cloud GLM (${glm.modelId}) via ${glm.baseUrl}. Set OVERWATCH_LLM=claude to switch back.`);
   } else {
     // Claude mode (default): Anthropic key is REQUIRED.
@@ -161,6 +170,7 @@ async function start() {
       process.exit(1);
     }
     process.env.ANTHROPIC_API_KEY = llmKey;
+    llm = { provider: 'claude', anthropicKey: llmKey };
     console.log('[i] LLM: Anthropic Claude (default). Set OVERWATCH_LLM=glm for Ollama Cloud GLM-5.2.');
   }
 
@@ -171,10 +181,12 @@ async function start() {
   // console_log_alert.
   const tgToken = await resolveOptionalCredential('telegramBotToken', dotenv.telegram_bot_token || process.env.TELEGRAM_BOT_TOKEN);
   const tgChat = await resolveOptionalCredential('telegramChatId', dotenv.telegram_chat_id || process.env.TELEGRAM_CHAT_ID);
+  let telegram: UserContext['telegram'];
   if (tgToken && tgChat) {
     process.env.TELEGRAM_BOT_TOKEN = tgToken;
     process.env.TELEGRAM_CHAT_ID = tgChat;
     const minSev = process.env.TELEGRAM_MIN_SEVERITY || dotenv.telegram_min_severity || 'WARNING';
+    telegram = { botToken: tgToken, chatId: tgChat, minSeverity: minSev.toUpperCase() as 'INFO' | 'WARNING' | 'CRITICAL' };
     try {
       const tgPath = path.join(OVERWATCH_DIR, 'telegram.json');
       fs.writeFileSync(tgPath, JSON.stringify({ botToken: tgToken, chatId: tgChat, minSeverity: minSev }, null, 2));
@@ -193,11 +205,29 @@ async function start() {
 
   console.log('Initializing Overwatch AI Session...');
 
+  // Assemble the single-user context. The doctrine extension + tools live in
+  // @overwatch/core; the CLI just supplies this user's creds, a file-backed store,
+  // and the local-daemon hook. (llm here is informational for the CLI — Pi's own
+  // model selection drives the LLM via piArgs/env; the server consumes u.llm.)
+  const userContext: UserContext = {
+    uid: 'local',
+    growwToken,
+    llm,
+    telegram,
+    store: new FileStore(OVERWATCH_DIR),
+    skillsDir: path.join(OVERWATCH_DIR, 'skills'),
+    // arm_monitor -> ensure the local always-on daemon is up (survives CLI close).
+    onMonitorArmed: () => {
+      const r = ensureMonitord();
+      console.log(`[monitord] ${r}`);
+    },
+  };
+
   // The doctrine extension (master prompt + Groww MCP tools + skill auto-loader +
   // custom tools + alert bridge) lives in @overwatch/core so the server and worker
   // can reuse it. The CLI only owns the interactive bootstrap above.
   try {
-    await main(piArgs, { extensionFactories: [overwatchExtension] });
+    await main(piArgs, { extensionFactories: [makeOverwatchExtension(userContext)] });
   } catch (error: any) {
     console.error("Failed to start session:", error.message);
   }

@@ -75,9 +75,9 @@ function parseFrontmatter(text: string): SkillMeta {
 
 interface Route { file: string; score: number; }
 
-export function scoreSkills(prompt: string): Route[] {
+export function scoreSkills(prompt: string, skillsDir: string = SKILLS_DIR): Route[] {
   let files: string[] = [];
-  try { files = fs.readdirSync(SKILLS_DIR).filter(f => f.endsWith('.md')); } catch { return []; }
+  try { files = fs.readdirSync(skillsDir).filter(f => f.endsWith('.md')); } catch { return []; }
 
   const promptLc = prompt.toLowerCase();
   const promptTokens = new Set(tokenize(prompt));
@@ -85,7 +85,7 @@ export function scoreSkills(prompt: string): Route[] {
 
   for (const file of files) {
     let text = '';
-    try { text = fs.readFileSync(path.join(SKILLS_DIR, file), 'utf8'); } catch { continue; }
+    try { text = fs.readFileSync(path.join(skillsDir, file), 'utf8'); } catch { continue; }
     const meta = parseFrontmatter(text);
     if (meta.superseded_by) continue;   // deprecated redirect — never inject
 
@@ -116,7 +116,7 @@ export function scoreSkills(prompt: string): Route[] {
   return routes.sort((a, b) => b.score - a.score).slice(0, MAX_SKILLS);
 }
 
-export function setupAutoLoader(api: ExtensionAPI) {
+export function setupAutoLoader(api: ExtensionAPI, skillsDir: string = SKILLS_DIR) {
   api.on("context", async (event) => {
     const messages = event.messages;
     if (messages.length === 0) return;
@@ -131,7 +131,7 @@ export function setupAutoLoader(api: ExtensionAPI) {
         : '';
     if (!content.trim()) return;
 
-    const routes = scoreSkills(content);
+    const routes = scoreSkills(content, skillsDir);
     if (routes.length === 0) return;
 
     // Pull in the shared multi-timeframe protocol if any injected skill needs it.
@@ -140,14 +140,14 @@ export function setupAutoLoader(api: ExtensionAPI) {
     let needsShared = false;
     for (const file of chosen) {
       try {
-        const text = fs.readFileSync(path.join(SKILLS_DIR, file), 'utf8');
+        const text = fs.readFileSync(path.join(skillsDir, file), 'utf8');
         bodies.push({ label: file, text });
         if (/_shared\/multi-timeframe-protocol/.test(text)) needsShared = true;
       } catch { /* skip unreadable */ }
     }
     if (needsShared) {
       try {
-        const text = fs.readFileSync(path.join(SKILLS_DIR, SHARED_PROTOCOL), 'utf8');
+        const text = fs.readFileSync(path.join(skillsDir, SHARED_PROTOCOL), 'utf8');
         bodies.unshift({ label: SHARED_PROTOCOL, text });
       } catch { /* shared protocol not seeded yet */ }
     }

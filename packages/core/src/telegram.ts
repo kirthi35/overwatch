@@ -39,8 +39,13 @@ export function telegramEnabled(): boolean {
 }
 
 // Fire-and-forget alert delivery. Always resolves; never throws.
-export async function notifyTelegram(opts: { label?: string; message: string; severity?: string }): Promise<void> {
-  const c = loadConfig();
+// `cfg` lets a caller pass a per-user config (multi-tenant); when omitted it
+// falls back to env / ~/.overwatch/telegram.json (the single-user CLI path).
+export async function notifyTelegram(
+  opts: { label?: string; message: string; severity?: string },
+  cfg?: TgConfig,
+): Promise<void> {
+  const c = cfg ?? loadConfig();
   if (!c.botToken || !c.chatId) return;
 
   const sev = (opts.severity || 'INFO').toUpperCase();
