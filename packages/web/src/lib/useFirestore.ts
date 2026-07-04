@@ -33,3 +33,12 @@ export async function fetchTheses(uid: string): Promise<Array<Record<string, unk
   const snap = await getDocs(collection(db, `users/${uid}/theses`));
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 }
+
+export async function fetchMessages(uid: string, cid: string): Promise<Array<{ role: string; content: string }>> {
+  const q = query(collection(db, `users/${uid}/conversations/${cid}/messages`), orderBy('seq', 'asc'));
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => {
+    const m = d.data() as { role?: string; content?: unknown };
+    return { role: m.role ?? 'assistant', content: typeof m.content === 'string' ? m.content : String(m.content ?? '') };
+  });
+}

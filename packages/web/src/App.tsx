@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import type { User } from 'firebase/auth';
-import { AssistantRuntimeProvider, useLocalRuntime, ThreadPrimitive, ComposerPrimitive, MessagePrimitive } from '@assistant-ui/react';
+import { AssistantRuntimeProvider, useLocalRuntime, ThreadPrimitive, ComposerPrimitive, MessagePrimitive, type ThreadMessageLike } from '@assistant-ui/react';
 import { onAuthChange, signInGoogle, signInEmail, registerEmail, signOutUser, auth } from './firebase';
 import { listModels, saveSecrets, createConversation, type ModelInfo } from './lib/api';
 import { makeChatAdapter } from './lib/runtime';
+import { useCollection, fetchMessages } from './lib/useFirestore';
 import { MonitorsTab } from './tabs/MonitorsTab';
 import { AlertsTab } from './tabs/AlertsTab';
 import { SettingsTab } from './tabs/SettingsTab';
@@ -66,7 +67,6 @@ const TABS: Tab[] = ['chat', 'monitors', 'alerts', 'settings'];
 function MainApp() {
   // onboarded === null: checking; false: needs creds; ModelInfo[]: ready
   const [onboarded, setOnboarded] = useState<ModelInfo[] | null | false>(null);
-  const [chatKey, setChatKey] = useState(0);
   const [tab, setTab] = useState<Tab>('chat');
   const uid = auth.currentUser?.uid ?? '';
 
@@ -101,11 +101,6 @@ function MainApp() {
           )}
         </div>
         <div className="flex items-center gap-3 text-xs text-gray-400">
-          {onboarded && tab === 'chat' && (
-            <button onClick={() => setChatKey((k) => k + 1)} className="rounded border border-gray-700 px-2 py-1 hover:bg-gray-800">
-              + New chat
-            </button>
-          )}
           <span>{auth.currentUser?.email}</span>
           <button onClick={() => signOutUser()} className="hover:text-gray-200">Sign out</button>
         </div>
@@ -113,7 +108,7 @@ function MainApp() {
       <main className="min-h-0 flex-1">
         {onboarded === null && <Centered>Checking credentials…</Centered>}
         {onboarded === false && <Onboarding onDone={check} />}
-        {onboarded && tab === 'chat' && <ChatArea key={chatKey} />}
+        {onboarded && tab === 'chat' && <ChatArea uid={uid} />}
         {onboarded && tab === 'monitors' && <MonitorsTab uid={uid} />}
         {onboarded && tab === 'alerts' && <AlertsTab uid={uid} />}
         {onboarded && tab === 'settings' && <SettingsTab uid={uid} />}
@@ -167,20 +162,79 @@ function Onboarding({ onDone }: { onDone: () => void }) {
   );
 }
 
-function ChatArea() {
-  const [cid, setCid] = useState<string | null>(null);
-  const [err, setErr] = useState('');
+interface Convo { id: string; title?: string; updatedAt?: string }
+
+function ChatArea({ uid }: { uid: string }) {
+  const convos = useCollection<Convo>(`users/${uid}/conversations`, 'updatedAt', 'desc');
+  const [activeCid, setActiveCid] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+
+  // Auto-select the most recent conversation once loaded (if none selected).
   useEffect(() => {
-    createConversation('New chat').then(setCid).catch((e) => setErr(e.message));
-  }, []);
-  if (err) return <Centered>Error: {err}</Centered>;
-  if (!cid) return <Centered>Starting conversation…</Centered>;
-  return <ChatThread cid={cid} />;
+    if (!activeCid && convos.length > 0) setActiveCid(convos[0].id);
+  }, [convos, activeCid]);
+
+  const newChat = async () => {
+    setCreating(true);
+    try {
+      const cid = await createConversation('New chat');
+      setActiveCid(cid);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  return (
+    <div className="flex h-full">
+      <aside className="flex w-64 shrink-0 flex-col border-r border-gray-800">
+        <button onClick={newChat} disabled={creating} className="m-2 rounded-lg border border-gray-700 px-2 py-1.5 text-xs hover:bg-gray-800 disabled:opacity-50">
+          + New chat
+        </button>
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {convos.length === 0 && <p className="px-3 py-2 text-xs text-gray-600">No conversations yet.</p>}
+          {convos.map((c) => (
+            <button
+              key={c.id}
+              onClick={() => setActiveCid(c.id)}
+              className={`block w-full border-b border-gray-800/50 px-3 py-2 text-left hover:bg-gray-800/40 ${activeCid === c.id ? 'bg-gray-800/60' : ''}`}
+            >
+              <div className="truncate text-sm text-gray-200">{c.title || 'Chat'}</div>
+              <div className="text-[10px] text-gray-600">{c.updatedAt ? new Date(c.updatedAt).toLocaleString() : ''}</div>
+            </button>
+          ))}
+        </div>
+      </aside>
+      <div className="min-w-0 flex-1">
+        {activeCid ? <ChatThread key={activeCid} cid={activeCid} uid={uid} /> : <Centered>Start a new chat.</Centered>}
+      </div>
+    </div>
+  );
 }
 
-function ChatThread({ cid }: { cid: string }) {
+// Load prior messages from Firestore, then mount the runtime seeded with them.
+function ChatThread({ cid, uid }: { cid: string; uid: string }) {
+  const [initial, setInitial] = useState<ThreadMessageLike[] | null>(null);
+  useEffect(() => {
+    fetchMessages(uid, cid)
+      .then((ms) =>
+        setInitial(
+          ms.map((m) => ({
+            role: m.role === 'user' ? 'user' : m.role === 'system' ? 'system' : 'assistant',
+            content: m.content,
+          })),
+        ),
+      )
+      .catch(() => setInitial([]));
+  }, [cid, uid]);
+  if (initial === null) return <Centered>Loading…</Centered>;
+  return <ChatRuntime cid={cid} initialMessages={initial} />;
+}
+
+function ChatRuntime({ cid, initialMessages }: { cid: string; initialMessages: ThreadMessageLike[] }) {
   const adapter = useMemo(() => makeChatAdapter(cid), [cid]);
-  const runtime = useLocalRuntime(adapter);
+  const runtime = useLocalRuntime(adapter, { initialMessages });
   return (
     <AssistantRuntimeProvider runtime={runtime}>
       <ThreadPrimitive.Root className="flex h-full flex-col">
