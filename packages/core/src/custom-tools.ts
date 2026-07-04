@@ -140,7 +140,20 @@ export function registerCustomTools(api: ExtensionAPI, u: UserContext) {
     }),
     execute: async (_toolCallId, args: any) => {
       try {
-        await u.store.putThesis(args.id, args.doc);
+        // Normalize doc: models sometimes pass a JSON string; Firestore needs a plain
+        // object at the top level (not a string/array/primitive).
+        let doc: unknown = args.doc;
+        if (typeof doc === 'string') {
+          try {
+            doc = JSON.parse(doc);
+          } catch {
+            doc = { text: doc };
+          }
+        }
+        if (doc === null || typeof doc !== 'object' || Array.isArray(doc)) {
+          doc = { value: doc };
+        }
+        await u.store.putThesis(args.id, doc);
         return { content: [{ type: 'text', text: `Wrote thesis '${args.id}'.` }], details: { written: true, id: args.id } };
       } catch (e: any) {
         return { content: [{ type: 'text', text: `write_thesis: failed — ${e.message}` }], details: { written: false, id: undefined as string | undefined } };
