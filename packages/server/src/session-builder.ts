@@ -31,6 +31,9 @@ export interface BuildSessionOptions {
   cwd?: string;
   /** Extra extension factories to attach alongside the doctrine (e.g. alert injection, diagnostics). */
   extraExtensions?: ExtensionFactory[];
+  /** Skip the Overwatch doctrine extension (no master prompt, Groww, or custom tools).
+   *  Used for cheap side tasks like title generation. */
+  noDoctrine?: boolean;
 }
 
 const GLM_MODEL_DEFAULTS = { reasoning: false, input: ['text'] as ('text' | 'image')[], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 128000, maxTokens: 16384 };
@@ -108,7 +111,9 @@ export async function buildUserSession(u: UserContext, opts: BuildSessionOptions
     resourceLoaderOptions: {
       // The doctrine, parameterized for this user. alertBridge:false — the server
       // surfaces monitor fires via its own Firestore listener (phase 5), not file-tailing.
-      extensionFactories: [makeOverwatchExtension(u, { alertBridge: false }), ...(opts.extraExtensions ?? [])],
+      extensionFactories: opts.noDoctrine
+        ? [...(opts.extraExtensions ?? [])]
+        : [makeOverwatchExtension(u, { alertBridge: false }), ...(opts.extraExtensions ?? [])],
     },
   });
 

@@ -62,7 +62,7 @@ export class SessionPool {
     const u = await buildUserContext(this.db, uid, cid);
     const sessionsDir = this.opts.sessionsRoot ? path.join(this.opts.sessionsRoot, uid, cid) : undefined;
     const { session, registry } = await buildUserSession(u, { model, sessionsDir });
-    const persistence = await attachPersistence(session, this.db, uid, cid);
+    const persistence = await attachPersistence(session, this.db, uid, cid, u);
     // Route this conversation's monitor fires into the live session (online) and
     // replay any that fired while it was cold (open-time).
     const alertRouter = attachAlertRouter(session, this.db, uid, cid);
