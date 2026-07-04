@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import type { User } from 'firebase/auth';
-import { AssistantRuntimeProvider, useLocalRuntime, ThreadPrimitive, ComposerPrimitive, MessagePrimitive, useMessagePartText, type ThreadMessageLike } from '@assistant-ui/react';
+import { AssistantRuntimeProvider, useLocalRuntime, ThreadPrimitive, ComposerPrimitive, MessagePrimitive, ActionBarPrimitive, useMessagePartText, type ThreadMessageLike } from '@assistant-ui/react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Flame, MessageSquare, Radar, Bell, Settings as SettingsIcon, Sun, Moon, Plus, Trash2, LogOut, ArrowUp } from 'lucide-react';
+import { Flame, MessageSquare, Radar, Bell, Settings as SettingsIcon, Sun, Moon, Plus, Trash2, LogOut, ArrowUp, Copy, Check } from 'lucide-react';
 import { onAuthChange, signInGoogle, signInEmail, registerEmail, signOutUser, auth } from './firebase';
 import { listModels, createConversation, deleteConversation, type ModelInfo } from './lib/api';
 import { makeChatAdapter } from './lib/runtime';
@@ -280,22 +280,47 @@ function ToolCard({ toolName, args, result, isError }: { toolName: string; args?
   );
 }
 
+function CopyButton() {
+  return (
+    <ActionBarPrimitive.Copy className="flex items-center gap-1 rounded-md px-1.5 py-1 text-muted hover:bg-surface-2 hover:text-fg" title="Copy">
+      <MessagePrimitive.If copied>
+        <Check size={13} />
+      </MessagePrimitive.If>
+      <MessagePrimitive.If copied={false}>
+        <Copy size={13} />
+      </MessagePrimitive.If>
+    </ActionBarPrimitive.Copy>
+  );
+}
+
 function UserMessage() {
   return (
-    <MessagePrimitive.Root className="flex justify-end">
+    <MessagePrimitive.Root className="group flex flex-col items-end">
       <div className="max-w-[80%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-accent px-4 py-2.5 text-sm text-accent-fg">
         <MessagePrimitive.Parts />
       </div>
+      <MessagePrimitive.If lastOrHover>
+        <ActionBarPrimitive.Root className="mt-1 text-xs">
+          <CopyButton />
+        </ActionBarPrimitive.Root>
+      </MessagePrimitive.If>
     </MessagePrimitive.Root>
   );
 }
 
 function AssistantMessage() {
   return (
-    <MessagePrimitive.Root className="flex justify-start gap-3">
+    <MessagePrimitive.Root className="group flex justify-start gap-3">
       <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[var(--accent-soft)] text-accent"><Flame size={14} /></span>
-      <div className="max-w-[85%] rounded-2xl rounded-tl-md border border-border bg-surface px-4 py-2.5 text-sm">
-        <MessagePrimitive.Parts components={{ Text: MarkdownText, tools: { Fallback: ToolCard } }} />
+      <div className="flex max-w-[85%] flex-col gap-1">
+        <div className="rounded-2xl rounded-tl-md border border-border bg-surface px-4 py-2.5 text-sm">
+          <MessagePrimitive.Parts components={{ Text: MarkdownText, tools: { Fallback: ToolCard } }} />
+        </div>
+        <MessagePrimitive.If lastOrHover>
+          <ActionBarPrimitive.Root className="text-xs">
+            <CopyButton />
+          </ActionBarPrimitive.Root>
+        </MessagePrimitive.If>
       </div>
     </MessagePrimitive.Root>
   );
