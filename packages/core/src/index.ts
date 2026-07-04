@@ -21,6 +21,17 @@ export { notifyTelegram, telegramEnabled } from './telegram.js';
 export { FileStore, sanitizeName } from './file-store.js';
 export { setupAutoLoader, scoreSkills } from './auto-loader.js';
 export { registerCustomTools } from './custom-tools.js';
+export { GrowwDataClient } from './groww-client.js';
+export {
+  evaluateGates,
+  fail,
+  recover,
+  marketOpen,
+  istClock,
+  initMonitorState,
+  DEFAULT_WATCHDOG,
+} from './monitor-gates.js';
+export type { WatchdogOpts, WatchdogAlert, GateFire, IstClock } from './monitor-gates.js';
 export type {
   UserContext,
   OverwatchStore,

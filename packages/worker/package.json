@@ -1,0 +1,16 @@
+{
+  "name": "@overwatch/worker",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/main.js"
+  },
+  "dependencies": {
+    "@overwatch/core": "*",
+    "@overwatch/server": "*",
+    "firebase-admin": "^13.0.0"
+  }
+}
