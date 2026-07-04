@@ -308,11 +308,38 @@ function MarkdownText() {
   );
 }
 
+// Inline card for a Groww/custom tool call — compact chip, expandable to args/result.
+function ToolCard({ toolName, args, result, isError }: { toolName: string; args?: unknown; result?: unknown; isError?: boolean }) {
+  const done = result !== undefined;
+  const badge = isError ? '❌ error' : done ? '✓' : '…';
+  const fmt = (v: unknown, n: number) => {
+    const s = typeof v === 'string' ? v : (() => { try { return JSON.stringify(v, null, 2); } catch { return String(v); } })();
+    return s.length > n ? s.slice(0, n) + '\n…(truncated)' : s;
+  };
+  return (
+    <details className="my-1 rounded-lg border border-gray-700/70 bg-gray-950/60 text-xs">
+      <summary className="cursor-pointer list-none px-2 py-1 text-gray-400">
+        🔧 <span className="font-medium text-gray-200">{toolName}</span> <span className={isError ? 'text-red-400' : done ? 'text-emerald-400' : 'text-gray-500'}>· {badge}</span>
+      </summary>
+      <div className="border-t border-gray-800 px-2 py-1.5">
+        <div className="text-[10px] uppercase text-gray-600">args</div>
+        <pre className="mb-1 whitespace-pre-wrap text-gray-400">{fmt(args ?? {}, 600)}</pre>
+        {done && (
+          <>
+            <div className="text-[10px] uppercase text-gray-600">result</div>
+            <pre className="max-h-48 overflow-auto whitespace-pre-wrap text-gray-500">{fmt(result, 1500)}</pre>
+          </>
+        )}
+      </div>
+    </details>
+  );
+}
+
 function AssistantMessage() {
   return (
     <MessagePrimitive.Root className="flex justify-start">
       <div className="max-w-[85%] rounded-2xl bg-gray-800/80 px-4 py-2 text-sm">
-        <MessagePrimitive.Parts components={{ Text: MarkdownText }} />
+        <MessagePrimitive.Parts components={{ Text: MarkdownText, tools: { Fallback: ToolCard } }} />
       </div>
     </MessagePrimitive.Root>
   );

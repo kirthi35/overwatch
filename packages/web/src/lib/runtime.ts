@@ -39,9 +39,19 @@ export function makeChatAdapter(cid: string): ChatModelAdapter {
           body: JSON.stringify({ text }),
         });
 
-        // 3. read SSE frames.
+        // 3. read SSE frames. Build content = accumulated text + tool-call parts, so
+        // assistant-ui renders both the prose and inline tool cards.
         let buf = '';
         let acc = '';
+        const tools = new Map<string, { toolName: string; args: unknown; result?: unknown; isError?: boolean }>();
+        const build = (): any[] => {
+          const parts: any[] = [];
+          if (acc) parts.push({ type: 'text', text: acc });
+          for (const [toolCallId, t] of tools) {
+            parts.push({ type: 'tool-call', toolCallId, toolName: t.toolName, args: t.args ?? {}, result: t.result, isError: t.isError });
+          }
+          return parts;
+        };
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
@@ -60,14 +70,18 @@ export function makeChatAdapter(cid: string): ChatModelAdapter {
             }
             if (evt.type === 'message_update' || evt.type === 'message_end') {
               const t = partsToText(evt.message?.content);
-              if (t) {
-                acc = t;
-                yield { content: [{ type: 'text', text: acc }] };
-              }
+              if (t) acc = t;
               if (evt.type === 'message_end' && evt.message?.stopReason === 'error') {
                 acc = acc || `⚠️ ${evt.message?.errorMessage ?? 'model error'}`;
-                yield { content: [{ type: 'text', text: acc }] };
               }
+              if (build().length) yield { content: build() };
+            } else if (evt.type === 'tool_execution_start') {
+              tools.set(evt.toolCallId, { toolName: evt.toolName, args: evt.args });
+              yield { content: build() };
+            } else if (evt.type === 'tool_execution_end') {
+              const t = tools.get(evt.toolCallId);
+              if (t) { t.result = evt.result; t.isError = evt.isError; }
+              yield { content: build() };
             } else if (evt.type === 'agent_end') {
               return;
             }
