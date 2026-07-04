@@ -4,6 +4,9 @@ import { AssistantRuntimeProvider, useLocalRuntime, ThreadPrimitive, ComposerPri
 import { onAuthChange, signInGoogle, signInEmail, registerEmail, signOutUser, auth } from './firebase';
 import { listModels, saveSecrets, createConversation, type ModelInfo } from './lib/api';
 import { makeChatAdapter } from './lib/runtime';
+import { MonitorsTab } from './tabs/MonitorsTab';
+import { AlertsTab } from './tabs/AlertsTab';
+import { SettingsTab } from './tabs/SettingsTab';
 
 export function App() {
   const [user, setUser] = useState<User | null | undefined>(undefined);
@@ -57,10 +60,15 @@ function AuthGate() {
   );
 }
 
+type Tab = 'chat' | 'monitors' | 'alerts' | 'settings';
+const TABS: Tab[] = ['chat', 'monitors', 'alerts', 'settings'];
+
 function MainApp() {
   // onboarded === null: checking; false: needs creds; ModelInfo[]: ready
   const [onboarded, setOnboarded] = useState<ModelInfo[] | null | false>(null);
   const [chatKey, setChatKey] = useState(0);
+  const [tab, setTab] = useState<Tab>('chat');
+  const uid = auth.currentUser?.uid ?? '';
 
   const check = async () => {
     try {
@@ -76,12 +84,24 @@ function MainApp() {
   return (
     <div className="flex h-full flex-col">
       <header className="flex items-center justify-between border-b border-gray-800 px-4 py-2">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-4">
           <span className="font-semibold text-emerald-400">OVERWATCH</span>
-          <span className="text-xs text-gray-600">Chat</span>
+          {onboarded && (
+            <nav className="flex gap-1">
+              {TABS.map((t) => (
+                <button
+                  key={t}
+                  onClick={() => setTab(t)}
+                  className={`rounded px-2.5 py-1 text-xs capitalize ${tab === t ? 'bg-gray-800 text-gray-100' : 'text-gray-500 hover:text-gray-300'}`}
+                >
+                  {t}
+                </button>
+              ))}
+            </nav>
+          )}
         </div>
         <div className="flex items-center gap-3 text-xs text-gray-400">
-          {onboarded && (
+          {onboarded && tab === 'chat' && (
             <button onClick={() => setChatKey((k) => k + 1)} className="rounded border border-gray-700 px-2 py-1 hover:bg-gray-800">
               + New chat
             </button>
@@ -93,7 +113,10 @@ function MainApp() {
       <main className="min-h-0 flex-1">
         {onboarded === null && <Centered>Checking credentials…</Centered>}
         {onboarded === false && <Onboarding onDone={check} />}
-        {onboarded && <ChatArea key={chatKey} />}
+        {onboarded && tab === 'chat' && <ChatArea key={chatKey} />}
+        {onboarded && tab === 'monitors' && <MonitorsTab uid={uid} />}
+        {onboarded && tab === 'alerts' && <AlertsTab uid={uid} />}
+        {onboarded && tab === 'settings' && <SettingsTab uid={uid} />}
       </main>
     </div>
   );
