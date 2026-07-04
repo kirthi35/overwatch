@@ -125,6 +125,7 @@ WHAT WOULD CHANGE THIS CALL: [specific, observable trigger]
    ATR or order-book depth, so stop-sizing and the entry gate cannot be fully satisfied.
 6. End every run with the one observable thing that would flip the call. A thesis you can't
    falsify isn't analysis, it's faith.
+7. VALUATION-REFUTED CAP: if the valuation claim scores REFUTED and the archetype is structural growth with decelerating growth (QoQ revenue growth falling across the last 3 quarters), the verdict caps at WAIT FOR PULLBACK regardless of technicals (verified violation: 2026-07-03 RUBICON — P/E 92 vs industry 35 scored REFUTED, QoQ growth 17%→16%→8%, bought the same morning at 0.94:1 R:R).
 
 ---
 

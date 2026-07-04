@@ -91,6 +91,8 @@ IF GO:
 - **NEVER predict the actual move** — give a *range with stated drivers*, and label the base case as an expectation, not a promise.
 - **NO-BET is a valid, frequent output.** Slow names over short horizons, extended names into resistance, and broken-driver names should be rejected. Refusing a bad bet is the edge.
 - **Stop math is inviolable.** Shares always derive from risk ÷ stop distance. Never size up because conviction is high; raise the risk budget only within preset bounds.
+- **STOP FLOOR:** minimum stop distance = 1.5×ATR(14) daily unless a structural level sits closer. If the ≥1.5×ATR structural stop breaks the 2:1 threshold, the trade is a NO-BET. A stop is NEVER tightened to manufacture a passing R:R (verified violation: 2026-07-02 PARAS, ₹1,278 stop = 0.5×ATR on a ₹89-ATR stock, chosen to convert a failing 0.84–1.31:1 into a claimed 2.75:1; price hit ₹1,285 the next session).
+- **SIZING DIRECTION:** capital and risk % come first from portfolio-risk; shares are derived. Never accept a share count from the operator and back-compute the risk (verified violation: 2026-07-03 RUBICON, 'i want to buy 5').
 - **No chasing:** if RSI ≥ 75–78 or price is extended far above the entry reference, downgrade to WATCH regardless of capacity.
 - **Read-only:** output a plan; the operator executes and arms the GTT stop manually. Close every output with the not-financial-advice line.
 
@@ -98,11 +100,18 @@ IF GO:
 
 ## Worked Examples
 
-### Paras — a GO (correctly sized, even though it later went against us)
-- Character: fast, ATR ~7%/day; driver (defence capex) intact; extension: mid-run, pressing ₹1,300 resistance.
-- Realistic 1-month move: +6% → +12% toward the ₹1,443 prior peak; base ~+8%.
-- Entry ref ₹1,292, stop ₹1,250 (below coil), T1 ₹1,360, T2 ₹1,443 → R:R to T1 ≈ 1.6:1, to T2 ≈ 3.6:1.
-- Sized at 8 shares → risk ~₹336, a trivial fraction of capital. **The reclaim failed and the stop did its job for a tiny loss — the sizing is what made being wrong painless.** That is a *successful* application, not a failed one.
+### PARAS 2026-07-02 — the REAL trade (a process failure, recorded so it is never repeated)
+- Morning verdict (correct): STAND DOWN — R:R 0.84:1 to T1 / 1.31:1 to T2 on the
+  structural ₹1,200 stop; below the 2:1 floor.
+- What happened: under operator time-pressure, a "momentum approach" was improvised that
+  tightened the stop to ₹1,278 (0.5×ATR) to claim 2.75:1. Entry ₹1,322.47 ×10 at the
+  day's high (RSI ~70, +53% month). The trade sheet itself printed blended R:R 1.98:1 —
+  below the floor — and was waved through.
+- Next session: −3.7% close, low ₹1,285 (₹7 above the stop). The whipsaw the tight stop
+  guaranteed arrived on schedule.
+- What held: risk containment — ₹445 max loss, GTT armed, hard Jul 9 exit. Being wrong
+  was cheap. The sizing math worked; the decision to trade was the failure.
+- Encoded rule: Standing Orders 3, 4, 9 exist because of this trade.
 
 ### Eternal — a NO-BET (as a swing)
 - Character: slow mega-cap, ~1–2%/week; multiple maxed. Realistic 1-month move ≈ 2–4%.

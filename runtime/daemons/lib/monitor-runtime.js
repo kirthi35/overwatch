@@ -184,6 +184,14 @@ function createMonitor(cfg) {
 
   // Emit an alert line to the user's alerts.log (and echo to stdout).
   function emit(message, severity, ms) {
+    // CROSS-WIRING GUARD (P1.4): the label in the line always comes from THIS
+    // monitor's own closure (cfg.label), never a shared/outer variable. As a
+    // tripwire, if the message body does not reference this monitor's own label,
+    // flag it visibly in alerts.log — a gate message that names no symbol (or the
+    // wrong one) is the RUBICON-rendered-as-PARAS defect (2026-07-03).
+    if (!String(message).includes(label)) {
+      message = `[LABEL-MISMATCH-BUG] ${message}`;
+    }
     const line = `[${nowISO(ms)}] [${severity}] [${label}] ${message}\n`;
     sink(line);
     console.log(`[ALERT ${severity}][${label}] ${message}`);
@@ -256,10 +264,10 @@ function createMonitor(cfg) {
 
   function start() {
     if (!token) {
-      emit('No Groww token in env (GROWW_API_TOKEN / GROWW_MCP_TOKEN / GROWW_TOKEN). Monitor cannot start.', 'CRITICAL', now());
+      emit(`${label}: No Groww token in env (GROWW_API_TOKEN / GROWW_MCP_TOKEN / GROWW_TOKEN). Monitor cannot start.`, 'CRITICAL', now());
       return;
     }
-    emit(`Monitor armed (resilient runtime). Poll ${O.POLL_MS / 1000}s, timeout ${O.CALL_TIMEOUT_MS / 1000}s, watchdog WARN@${O.MAX_FAILS_WARN}/CRIT@${O.MAX_FAILS_CRIT}.`, 'INFO', now());
+    emit(`${label} monitor armed (resilient runtime). Poll ${O.POLL_MS / 1000}s, timeout ${O.CALL_TIMEOUT_MS / 1000}s, watchdog WARN@${O.MAX_FAILS_WARN}/CRIT@${O.MAX_FAILS_CRIT}.`, 'INFO', now());
     tick().catch((e) => {
       // tick() is designed never to throw; this is a last-resort net so the
       // process logs instead of dying silently.

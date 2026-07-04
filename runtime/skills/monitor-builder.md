@@ -40,6 +40,8 @@ confidence while a stop break sails past unseen. Every monitor MUST:
 All of this lives in `~/.overwatch/daemons/lib/monitor-runtime.js`. DO NOT
 re-implement MCP plumbing in a daemon. Write thin config on top of the lib.
 
+SINGLE-TRUTH RULE: theses/<symbol>.json is the only authoritative record of a symbol's stop, targets, entry, and thesis. Every monitor gate value must be read from (or written to) that file at arm time. Two monitors on one symbol with different stops is a defect: on arming, if an existing monitor for the symbol carries a different stop, HALT and ask the operator which is canonical before proceeding.
+
 ## Daemon Template
 Save to `~/.overwatch/daemons/<name>.js`. Fill in `label`, `statePath`,
 thresholds, `poll` (what data to fetch), and `evaluate` (the gates).

@@ -3,7 +3,7 @@ name: position-manager
 description: >
   USE THIS SKILL once the operator is ALREADY IN a position and needs to decide what to
   do with it — hold, trail the stop, take partial profit, or get out — e.g. "I'm in Paras
-  at 1292, hold or sell," "should I book profit here," "move my stop up," "this is going
+  at 1300, hold or sell," "should I book profit here," "move my stop up," "this is going
   nowhere, cut it," "take profits?", "manage my TCS trade." It is the LIVE-MANAGEMENT and
   EXIT stage: it re-checks the driver, locates price in its structure, and returns one
   decisive action with the exact new GTT stop / sell levels to arm in Groww. Do NOT use it
@@ -64,6 +64,9 @@ get_historical_technical_indicators   interval_in_minutes:1440, indicators:["atr
 fetch_historical_candle_data      interval_in_minutes:1440, last_n_days:5    # confirm daily CLOSES
 resolve_market_time_and_calendar
 ```
+
+OFFICIAL CLOSE RULE: 'Daily close' = the close field of the completed daily candle from fetch_historical_candle_data (interval 1440). The 15:30 LTP from get_quotes_and_depth is NOT the close (NSE official close is the last-30-min VWAP; verified divergence: PARAS Jul 2 2026 — LTP snapshot ₹1,333.10 vs official close ₹1,343.80). Any gate keyed on the daily close evaluates only after the completed candle is fetchable.
+
 Compute: LTP, unrealized P&L and **R-multiple** = (LTP − entry) ÷ (entry − original stop),
 daily-close trend, ATR, RSI, position vs EMA/supertrend/upper-Bollinger, and exit-side
 order-book depth (can the size actually be sold without slippage?). State the multi-timeframe
@@ -133,6 +136,7 @@ DECISION: HOLD / TRAIL / TRIM / TIME-STOP EXIT / FULL EXIT
 ---
 
 ## Hard Guardrails
+- **GAP PLAN RULE:** whenever a position CLOSES within 1.5% (or 0.5×ATR, whichever is larger) of its armed stop, the session must end with a written one-line gap plan for the next open, e.g. 'If it opens below the stop, exit at market on the open; do not wait for the GTT trigger price on a high-ATR stock.' Pre-deciding the gap response converts panic into execution.
 - **Driver-break beats price.** If the "why" is dead, exit at a loss if needed — don't wait
   for the stop. Invalidation ≠ stop.
 - **Ratchet only.** Never lower a long's stop. Widening a stop to avoid being stopped out is
@@ -151,16 +155,7 @@ DECISION: HOLD / TRAIL / TRIM / TIME-STOP EXIT / FULL EXIT
 
 ## Worked Examples
 
-### Paras — a winner, running (manage it up)
-- Entered ₹1,292, stop ₹1,250, +8% at ₹1,400, T1 ₹1,443 near. RSI ~74, mid-run, driver
-  (defence capex) intact. **DECISION: HOLD + RAISE STOP** — trail from ₹1,250 to ~₹1,300
-  (under the recent higher-low → now above breakeven; the trade is free). At ₹1,443 book ⅓,
-  chandelier-trail the runner toward T2 ₹1,443→capacity. Never lower that ₹1,300 stop.
-
-### Paras — the one that went against us (exit clean)
-- Entered ₹1,292, stop ₹1,250; the reclaim failed and price closed below ₹1,250. **DECISION:
-  FULL EXIT** — the stop did exactly its job for a trivial loss (sized so being wrong was
-  painless). **No averaging down.** That is a *successful* trade management, not a failure.
+Real worked example: see swing-horizon-sizer.md § PARAS 2026-07-02.
 
 ### Dead money (time stop)
 - A name flat for 3 weeks of a 4-week horizon while the driver cools and better setups appear.

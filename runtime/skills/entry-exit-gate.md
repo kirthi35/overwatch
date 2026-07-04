@@ -19,12 +19,15 @@ triggers: [entry gate, exit gate, pull the trigger, buy here, enter now, add now
 whether *this candle, this moment* is a valid entry, and you STAND DOWN the instant
 a gate fails. Cash is a valid position.
 
-> ⚠ **STUB status:** these gates are reconstructed from documented doctrine
-> (idea.md §5.1 + the no-chase band in `swing-horizon-sizer`/`valuation-cycle-analyzer`).
-> Confirm the exact thresholds against your live rules before relying on it.
-
 ## The gates — run IN ORDER, stand down if any fails
 
+0. SIZER VERDICT GATE. A swing-horizon-sizer GO verdict from THIS session, at a price
+   within 1% of the current LTP, is required before running gates 1–4. No verdict, or a
+   NO-BET/WATCH verdict → STAND DOWN. Then RECOMPUTE R:R at the actual proposed entry
+   price against the structural stop: if price drift has pushed R:R below 2:1, the GO
+   is VOID → STAND DOWN. (Standing Orders 2, 3.)
+   Also required: regime-gate must report GO this session; portfolio-risk must report
+   BOOK CLEARS (budget, heat, correlation, event) this session.
 1. **Daily-close trend confirmation.** Validity is set by the daily **CLOSE**, not
    intraday wicks. A forming candle proves nothing.
 2. **Order-book gate.** sell:buy depth ratio **> 3:1 = ABORT, no exceptions.**
@@ -43,6 +46,8 @@ fetch_historical_candle_data      interval_in_minutes:1440, last_n_days:2   # co
 resolve_market_time_and_calendar  # is it a live session? are we past the first 15-20 min?
 ```
 
+OFFICIAL CLOSE RULE: 'Daily close' = the close field of the completed daily candle from fetch_historical_candle_data (interval 1440). The 15:30 LTP from get_quotes_and_depth is NOT the close (NSE official close is the last-30-min VWAP; verified divergence: PARAS Jul 2 2026 — LTP snapshot ₹1,333.10 vs official close ₹1,343.80). Any gate keyed on the daily close evaluates only after the completed candle is fetchable.
+
 ## Output
 ```
 ENTRY GATE — <STOCK> @ ₹<ltp>
@@ -57,9 +62,29 @@ GTT stop to arm in Groww: ₹<stop>   (from swing-horizon-sizer)
 - **Read-only:** you output a plan; the operator executes and arms the GTT manually.
   End every operator-facing output with the standing not-financial-advice line.
 
-## Open reconciliation (flag to operator)
-- The master system prompt (`src/index.ts`) still states the no-chase RSI as
-  **70–75**; the mature skills say **75–78**. Pick one canonical number.
+## Entry modes — FORCED CHOICE, never blend (Standing Order 1 applies to this section)
+Declare the mode BEFORE analysis. Blending modes produced the worst of both on 2026-07-02
+(no dip captured, no real confirmation, full reversal risk).
+
+MODE A — DIP (buy structural support):
+  - Resting limit order AT a pre-identified structural support (prior reversal low, base
+    top, EMA/supertrend confluence) — identified while price is ABOVE it.
+  - Hard stop below the structure, ≥1.5×ATR from entry (Standing Order 4).
+  - Preconditions: structure layer (weekly) UP, driver intact, no event in window,
+    regime-gate GO.
+  - CONFIRMATION CANDLE IN DIP MODE — OPEN EMPIRICAL QUESTION: whether to additionally
+    require a closed green daily candle is UNRESOLVED pending the operator's pullback-
+    depth study. Until that study reports, dip mode REQUIRES the closed green daily
+    candle (status quo). Do not remove this requirement; log the study as the deciding
+    authority.
+
+MODE B — BREAKOUT (buy confirmed strength):
+  - Entry only after a daily CLOSE above the named resistance, and only if R:R ≥ 2:1
+    still holds from the post-close price. If the close-then-gap makes R:R fail, the
+    breakout is missed — a valid outcome, not a problem to engineer around.
+
+FORBIDDEN: entering mid-range on a forming intraday candle (neither at support nor above
+confirmed resistance). That is the 2026-07-02 PARAS entry — the defined anti-pattern.
 
 ## Pipeline Position
 `valuation-cycle-analyzer` → `swing-horizon-sizer` → **`entry-exit-gate`** → live

@@ -16,9 +16,7 @@ triggers: [macro, theme, sector, budget hike, union budget, policy, rate cut, wh
 **Role:** The intelligence officer who reads the macro board and names the Indian
 themes in play, before any single stock is considered.
 
-> ⏳ **STUB — awaiting the operator's authored doctrine.** The role, pipeline
-> position, and likely inputs are known from downstream skills; the actual mapping
-> logic, theme taxonomy, and scoring are NOT yet defined. Do not invent them.
+> STUB — intentionally unauthored; operator to supply mapping doctrine. Pipeline runs Stage-0 regime-gate → theme-to-stock-scout directly until authored.
 
 ## To be authored
 - [ ] The macro→theme mapping method (how a driver becomes a ranked theme list).

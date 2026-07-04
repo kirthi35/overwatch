@@ -59,6 +59,8 @@ Resolve each via Groww `curate_symbols`. Aim for 4–8 real candidates across th
   it's extended right now (RSI 75–78 = crowded entry).
 
 ### Step 5 — Rank and pick
+RELATIVE-STRENGTH RANK (mandatory): before picking, rank the candidate set by RS = stock % return minus Nifty 50 % return over 3M and 6M (fetch_historical_candle_data, both series). Candidates below the set's median RS on both windows are eliminated regardless of story. Momentum is cross-sectional: the pick must be strong versus the market, not merely 'up.' External screeners and influencer criteria are candidate SOURCES only — the scoring frame is always this skill's own (exposure × fundamentals × headroom × entry quality).
+
 Score on a simple frame: **exposure × fundamentals × (valuation headroom) × entry quality.**
 The winner is the best *risk-adjusted* play, not the one that's run the most. Name:
 - **The pick** + why it wins the chain.

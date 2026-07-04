@@ -66,6 +66,10 @@ required; `require_green_candle` needs `candle_interval`). Gate logic
    green (if required), book ratio under cap → CRITICAL, terminal (entry gate).
 3. `breakout_above` — LTP over it → WARNING, non-terminal heads-up (fires once).
 
+SINGLE-TRUTH RULE: theses/<symbol>.json is the only authoritative record of a symbol's stop, targets, entry, and thesis. Every monitor gate value must be read from (or written to) that file at arm time. Two monitors on one symbol with different stops is a defect: on arming, if an existing monitor for the symbol carries a different stop, HALT and ask the operator which is canonical before proceeding.
+
+NO INSTANT-FIRE ZONES: an entry-zone monitor may only be armed for a zone the price is NOT currently inside. If price is already in the proposed zone, arming a monitor is forbidden — the decision routes to entry-exit-gate NOW. A monitor engineered to fire immediately is a buy-now rubber stamp, not a patience tool (verified violation: 2026-07-03 RUBICON 'aggressive' zone ₹1,340–1,375 armed with LTP ₹1,371; fired in minutes; position −4.9% same day).
+
 ## Walk-away (CLI closed)
 Automatic — the daemon survives the CLI. To actually SEE a fire while away,
 configure Telegram (`.env` → `telegram_bot_token` + `telegram_chat_id`);
@@ -88,6 +92,7 @@ timestamped reading — NOT the current price. Reading this file is NOT a quote.
 - Do not claim a monitor is "live / polling now" from the file alone — confirm
   with `market_feed_status` (feed reachable AND monitord running).
 - Never invent a tick-by-tick sequence across repeated "check" requests.
+- This section is enforced by Standing Order 8 and applies to ALL price reporting in every skill, not only monitor reads.
 
 ## Managing
 `monitorctl list` shows armed monitors + the running daemon.
