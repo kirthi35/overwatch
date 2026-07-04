@@ -1,0 +1,109 @@
+import * as os from 'os';
+import * as path from 'path';
+import * as fs from 'fs';
+import {
+  AuthStorage,
+  ModelRegistry,
+  SessionManager,
+  createAgentSessionServices,
+  createAgentSessionFromServices,
+  type AgentSession,
+} from '@earendil-works/pi-coding-agent';
+import type { Model } from '@earendil-works/pi-ai';
+import { makeOverwatchExtension, type UserContext } from '@overwatch/core';
+
+// Build ONE headless AgentSession for ONE user, in-process. Credentials are scoped
+// to this session via an in-memory AuthStorage + a fresh ModelRegistry — NEVER
+// process.env, so concurrent users can't clobber each other. The Overwatch doctrine
+// is injected as an extension factory (same path main() uses). Built-in shell tools
+// (read/bash/edit/write) are disabled with noTools:'builtin' on the shared host;
+// our custom + Groww tools stay enabled.
+
+export interface BuildSessionOptions {
+  /** Desired model (from the conversation's saved choice); falls back to the user's provider default. */
+  model?: { provider: string; id: string };
+  /** Where Pi writes its native session JSONL (the local hot layer). Defaults to a temp dir. */
+  sessionsDir?: string;
+  /** Server-owned Pi config dir (kept clean so no stray on-disk extensions/skills load). */
+  agentDir?: string;
+  /** Per-session scratch cwd. Defaults to a temp dir. */
+  cwd?: string;
+}
+
+const GLM_MODEL_DEFAULTS = { reasoning: false, input: ['text'] as ('text' | 'image')[], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 128000, maxTokens: 16384 };
+
+// Built-in filesystem/shell tools that must NOT be offered on the shared multi-tenant
+// host. noTools:'builtin' already deactivates these; excludeTools is belt-and-suspenders,
+// and the per-session temp cwd means even an invoked built-in hits a throwaway dir.
+const SHELL_TOOLS = ['read', 'bash', 'edit', 'write', 'grep', 'find', 'ls'];
+
+function buildAuthAndRegistry(u: UserContext): { auth: AuthStorage; registry: ModelRegistry } {
+  const auth = AuthStorage.inMemory();
+  if (u.llm.anthropicKey) auth.setRuntimeApiKey('anthropic', u.llm.anthropicKey);
+  const registry = ModelRegistry.create(auth);
+  if (u.llm.provider === 'glm' && u.llm.ollama) {
+    registry.registerProvider('ollama-cloud', {
+      name: 'Ollama Cloud',
+      baseUrl: u.llm.ollama.baseUrl,
+      api: 'openai-completions',
+      apiKey: u.llm.ollama.apiKey,
+      models: u.llm.ollama.models.map((id) => ({ id, name: `GLM (${id})`, ...GLM_MODEL_DEFAULTS })),
+    });
+  }
+  return { auth, registry };
+}
+
+/** Which models this user can pick (auto-filtered by configured auth). */
+export function availableModels(registry: ModelRegistry): Array<{ provider: string; id: string; name: string }> {
+  return registry.getAvailable().map((m: any) => ({ provider: m.provider, id: m.id, name: m.name ?? m.id }));
+}
+
+function pickModel(registry: ModelRegistry, u: UserContext, desired?: { provider: string; id: string }): Model<any> | undefined {
+  const avail = registry.getAvailable();
+  if (desired) {
+    const m = registry.find(desired.provider, desired.id);
+    if (m) return m;
+  }
+  if (u.llm.provider === 'glm' && u.llm.ollama) {
+    const m = registry.find('ollama-cloud', u.llm.ollama.modelId);
+    if (m) return m;
+  }
+  return (avail as any[]).find((m) => m.provider === 'anthropic') ?? avail[0];
+}
+
+function tmpDir(prefix: string): string {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  return d;
+}
+
+export async function buildUserSession(u: UserContext, opts: BuildSessionOptions = {}): Promise<{ session: AgentSession; registry: ModelRegistry }> {
+  const { auth, registry } = buildAuthAndRegistry(u);
+  const cwd = opts.cwd ?? tmpDir('ow-cwd-');
+  const agentDir = opts.agentDir ?? tmpDir('ow-agent-');
+
+  const services = await createAgentSessionServices({
+    cwd,
+    agentDir,
+    authStorage: auth,
+    modelRegistry: registry,
+    resourceLoaderOptions: {
+      // The doctrine, parameterized for this user. alertBridge:false — the server
+      // surfaces monitor fires via its own Firestore listener (phase 5), not file-tailing.
+      extensionFactories: [makeOverwatchExtension(u, { alertBridge: false })],
+    },
+  });
+
+  const model = pickModel(services.modelRegistry, u, opts.model);
+  const sessionManager = opts.sessionsDir
+    ? SessionManager.create(cwd, opts.sessionsDir)
+    : SessionManager.inMemory(cwd);
+
+  const { session } = await createAgentSessionFromServices({
+    services,
+    sessionManager,
+    model,
+    noTools: 'builtin', // shell tools OFF on the shared host; keep extension + custom tools
+    excludeTools: SHELL_TOOLS, // belt-and-suspenders denylist
+  });
+  return { session, registry: services.modelRegistry };
+}
