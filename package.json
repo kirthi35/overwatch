@@ -9,6 +9,8 @@
   ],
   "scripts": {
     "build": "npm run build -w @overwatch/core && npm run build -w @overwatch/cli",
+    "build:backends": "npm run build -w @overwatch/core && npm run build -w @overwatch/server && npm run build -w @overwatch/worker",
+    "dev": "npm run build:backends && concurrently -k -n server,worker,web -c green,yellow,cyan \"npm start -w @overwatch/server\" \"npm start -w @overwatch/worker\" \"npm run dev -w @overwatch/web\"",
     "start": "npm run start -w @overwatch/cli",
     "seed": "node scripts/seed.mjs",
     "test": "node runtime/daemons/test-monitor-runtime.js"
@@ -22,6 +24,7 @@
     "@types/figlet": "^1.7.0",
     "@types/gradient-string": "^1.1.6",
     "@types/node": "^26.0.0",
+    "concurrently": "^10.0.3",
     "ts-node": "^10.9.2",
     "typescript": "^6.0.3"
   }

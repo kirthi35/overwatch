@@ -12,15 +12,13 @@ and `OVERWATCH_DEV_CREDS_FROM_ENV=1`). The server + worker load `.env` on startu
 
 ```bash
 npm install
-npm run build -w @overwatch/core
-npm run build -w @overwatch/server
-npm run build -w @overwatch/worker
-
-# three terminals (no env exports needed):
-npm start -w @overwatch/server    # http://localhost:8787  (GET /health)
-npm start -w @overwatch/worker    # monitor poller (NSE hours)
-npm run dev   -w @overwatch/web    # http://localhost:5173
+npm run dev        # ONE command: builds backends, runs server + worker + web together
 ```
+
+`npm run dev` builds core/server/worker, then runs all three concurrently
+(server :8787, worker, web :5173) with colored `[server] [worker] [web]` logs.
+Ctrl-C stops all of them. (Individual commands still exist if you want separate
+terminals — see `package.json` scripts.)
 
 Then open http://localhost:5173 → **sign in** (Google / email) → you land straight in
 **Chat** (GLM-5.2, since `OVERWATCH_LLM=glm`). Ask “Is the Groww feed live?” or
