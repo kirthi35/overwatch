@@ -25,10 +25,10 @@ interface Monitor {
 }
 
 function statusOf(m: Monitor): { label: string; cls: string } {
-  if (m.state?.fired) return { label: 'FIRED', cls: 'bg-red-500/20 text-red-300 border-red-500/40' };
-  if (m.state?.blindLevel) return { label: `BLIND (${m.state.blindLevel})`, cls: 'bg-orange-500/20 text-orange-300 border-orange-500/40' };
-  if (m.disabled) return { label: 'PAUSED', cls: 'bg-gray-600/20 text-gray-400 border-gray-600/40' };
-  return { label: 'ARMED', cls: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' };
+  if (m.state?.fired) return { label: 'FIRED', cls: 'bg-red-500/15 text-red-500 border-red-500/30' };
+  if (m.state?.blindLevel) return { label: `BLIND (${m.state.blindLevel})`, cls: 'bg-orange-500/15 text-orange-500 border-orange-500/30' };
+  if (m.disabled) return { label: 'PAUSED', cls: 'bg-surface-2 text-muted border-border' };
+  return { label: 'ARMED', cls: 'bg-[var(--accent-soft)] text-accent border-accent/30' };
 }
 
 function gateSummary(g?: Record<string, unknown>): string {
@@ -46,23 +46,24 @@ export function MonitorsTab({ uid }: { uid: string }) {
 
   return (
     <div className="flex h-full">
-      <div className="w-96 shrink-0 overflow-y-auto border-r border-gray-800">
-        {monitors.length === 0 && <p className="p-4 text-sm text-gray-600">No monitors armed. Ask in chat: “watch PARAS, alert if it breaks 1075”.</p>}
+      <div className="w-96 shrink-0 overflow-y-auto border-r border-border">
+        <div className="border-b border-border px-4 py-3 text-sm font-semibold">Monitors</div>
+        {monitors.length === 0 && <p className="p-4 text-sm text-muted">No monitors armed. Ask in chat: “watch PARAS, alert if it breaks 1075”.</p>}
         {monitors.map((m) => {
           const s = statusOf(m);
           return (
-            <button key={m.id} onClick={() => setSelId(m.id)} className={`block w-full border-b border-gray-800/60 px-4 py-3 text-left hover:bg-gray-800/40 ${selId === m.id ? 'bg-gray-800/60' : ''}`}>
+            <button key={m.id} onClick={() => setSelId(m.id)} className={`block w-full border-b border-border/60 px-4 py-3 text-left transition-colors hover:bg-surface-2 ${selId === m.id ? 'bg-surface-2' : ''}`}>
               <div className="flex items-center justify-between">
                 <span className="font-medium">{m.symbol}</span>
-                <span className={`rounded border px-1.5 py-0.5 text-[10px] ${s.cls}`}>{s.label}</span>
+                <span className={`rounded-full border px-2 py-0.5 text-[10px] ${s.cls}`}>{s.label}</span>
               </div>
-              <div className="mt-1 truncate text-xs text-gray-500">{gateSummary(m.gates)}</div>
+              <div className="mt-1 truncate text-xs text-muted">{gateSummary(m.gates)}</div>
             </button>
           );
         })}
       </div>
       <div className="min-w-0 flex-1 overflow-y-auto p-6">
-        {!selected ? <p className="text-sm text-gray-600">Select a monitor.</p> : <MonitorDetail uid={uid} m={selected} />}
+        {!selected ? <p className="text-sm text-muted">Select a monitor.</p> : <MonitorDetail uid={uid} m={selected} />}
       </div>
     </div>
   );
@@ -85,13 +86,13 @@ function MonitorDetail({ uid, m }: { uid: string; m: Monitor }) {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-semibold">{m.symbol}</h2>
-          <p className="text-xs text-gray-500">{m.name} · poll {m.poll_minutes ?? 1}m{m.time_gate_ist ? ` · after ${m.time_gate_ist} IST` : ''}</p>
+          <p className="text-xs text-muted">{m.name} · poll {m.poll_minutes ?? 1}m{m.time_gate_ist ? ` · after ${m.time_gate_ist} IST` : ''}</p>
         </div>
-        <span className={`rounded border px-2 py-1 text-xs ${s.cls}`}>{s.label}</span>
+        <span className={`rounded-full border px-2.5 py-1 text-xs ${s.cls}`}>{s.label}</span>
       </div>
 
       <Section title="Gates">
-        <pre className="whitespace-pre-wrap text-xs text-gray-300">{JSON.stringify(m.gates ?? {}, null, 2)}</pre>
+        <pre className="whitespace-pre-wrap text-xs text-muted">{JSON.stringify(m.gates ?? {}, null, 2)}</pre>
       </Section>
 
       <Section title="Live state (last polled — STALE, not a live quote)">
@@ -106,11 +107,11 @@ function MonitorDetail({ uid, m }: { uid: string; m: Monitor }) {
 
       <Section title="Thesis">
         {linked.length === 0 ? (
-          <p className="text-xs text-gray-600">No thesis document linked for {m.symbol}.</p>
+          <p className="text-xs text-muted">No thesis document linked for {m.symbol}.</p>
         ) : (
           linked.map((t) => (
-            <pre key={t.id} className="mb-2 whitespace-pre-wrap rounded bg-gray-950 p-3 text-xs text-gray-300">
-              <span className="text-emerald-400">{t.id}</span>
+            <pre key={t.id} className="mb-2 whitespace-pre-wrap rounded-lg bg-surface-2 p-3 text-xs text-muted">
+              <span className="text-accent">{t.id}</span>
               {'\n'}
               {JSON.stringify(t, null, 2)}
             </pre>
@@ -118,12 +119,9 @@ function MonitorDetail({ uid, m }: { uid: string; m: Monitor }) {
         )}
       </Section>
 
-      {m.conversationId && <p className="text-xs text-gray-600">Armed from conversation <span className="text-gray-400">{m.conversationId}</span></p>}
+      {m.conversationId && <p className="text-xs text-muted">Armed from conversation <span className="text-fg">{m.conversationId}</span></p>}
 
-      <button
-        onClick={() => { void deleteMonitorDoc(uid, m.id); }}
-        className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-1.5 text-sm text-red-300 hover:bg-red-500/20"
-      >
+      <button onClick={() => { void deleteMonitorDoc(uid, m.id); }} className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-sm text-red-500 hover:bg-red-500/20">
         Disarm monitor
       </button>
     </div>
@@ -132,17 +130,17 @@ function MonitorDetail({ uid, m }: { uid: string; m: Monitor }) {
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-xl border border-gray-800 bg-gray-900/40 p-4">
-      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">{title}</h3>
+    <div className="rounded-2xl border border-border bg-surface p-4">
+      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">{title}</h3>
       {children}
     </div>
   );
 }
 function Field({ k, v }: { k: string; v: unknown }) {
   return (
-    <div className="rounded bg-gray-950 px-2 py-1.5">
-      <div className="text-[10px] uppercase text-gray-600">{k}</div>
-      <div className="text-gray-200">{String(v)}</div>
+    <div className="rounded-lg bg-surface-2 px-2 py-1.5">
+      <div className="text-[10px] uppercase text-muted">{k}</div>
+      <div className="text-fg">{String(v)}</div>
     </div>
   );
 }

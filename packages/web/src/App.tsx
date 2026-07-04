@@ -3,10 +3,12 @@ import type { User } from 'firebase/auth';
 import { AssistantRuntimeProvider, useLocalRuntime, ThreadPrimitive, ComposerPrimitive, MessagePrimitive, useMessagePartText, type ThreadMessageLike } from '@assistant-ui/react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { Flame, MessageSquare, Radar, Bell, Settings as SettingsIcon, Sun, Moon, Plus, Trash2, LogOut, ArrowUp } from 'lucide-react';
 import { onAuthChange, signInGoogle, signInEmail, registerEmail, signOutUser, auth } from './firebase';
 import { listModels, createConversation, deleteConversation, type ModelInfo } from './lib/api';
 import { makeChatAdapter } from './lib/runtime';
 import { useCollection, fetchMessages } from './lib/useFirestore';
+import { useTheme } from './lib/theme';
 import { MonitorsTab } from './tabs/MonitorsTab';
 import { AlertsTab } from './tabs/AlertsTab';
 import { SettingsTab } from './tabs/SettingsTab';
@@ -14,14 +16,13 @@ import { SettingsTab } from './tabs/SettingsTab';
 export function App() {
   const [user, setUser] = useState<User | null | undefined>(undefined);
   useEffect(() => onAuthChange(setUser), []);
-
   if (user === undefined) return <Centered>Loading…</Centered>;
   if (!user) return <AuthGate />;
   return <MainApp />;
 }
 
 function Centered({ children }: { children: React.ReactNode }) {
-  return <div className="flex h-full items-center justify-center text-gray-400">{children}</div>;
+  return <div className="flex h-full items-center justify-center px-6 text-center text-sm text-muted">{children}</div>;
 }
 
 function AuthGate() {
@@ -41,77 +42,93 @@ function AuthGate() {
   };
 
   return (
-    <div className="flex h-full items-center justify-center">
-      <div className="w-80 rounded-xl border border-gray-800 bg-gray-900/60 p-6">
-        <h1 className="mb-1 text-xl font-semibold text-emerald-400">OVERWATCH</h1>
-        <p className="mb-5 text-xs text-gray-500">NSE trading assistant — scout &amp; analyst, never a shooter.</p>
-        <button onClick={() => signInGoogle().catch((e) => setErr(e.message))} className="mb-4 w-full rounded-lg bg-white py-2 text-sm font-medium text-gray-900 hover:bg-gray-200">
+    <div className="flex h-full items-center justify-center bg-bg p-4">
+      <div className="w-[360px] rounded-2xl border border-border bg-surface p-7 shadow-xl shadow-black/5">
+        <div className="mb-5 flex items-center gap-2">
+          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-accent text-accent-fg"><Flame size={18} /></span>
+          <div>
+            <div className="text-lg font-semibold tracking-tight">Overwatch</div>
+            <div className="text-xs text-muted">NSE scout &amp; analyst — never a shooter</div>
+          </div>
+        </div>
+        <button onClick={() => signInGoogle().catch((e) => setErr(e.message))} className="mb-4 w-full rounded-xl border border-border bg-surface-2 py-2.5 text-sm font-medium hover:bg-border/40">
           Continue with Google
         </button>
-        <div className="mb-4 text-center text-xs text-gray-600">or</div>
+        <div className="mb-4 flex items-center gap-3 text-xs text-muted"><span className="h-px flex-1 bg-border" />or<span className="h-px flex-1 bg-border" /></div>
         <form onSubmit={submit} className="space-y-3">
-          <input className="w-full rounded-lg border border-gray-800 bg-gray-950 px-3 py-2 text-sm" placeholder="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
-          <input className="w-full rounded-lg border border-gray-800 bg-gray-950 px-3 py-2 text-sm" placeholder="password" type="password" value={pw} onChange={(e) => setPw(e.target.value)} />
-          <button className="w-full rounded-lg bg-emerald-600 py-2 text-sm font-medium hover:bg-emerald-500">{mode === 'in' ? 'Sign in' : 'Create account'}</button>
+          <input className="w-full rounded-xl border border-border bg-bg px-3 py-2.5 text-sm outline-none focus:border-accent" placeholder="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+          <input className="w-full rounded-xl border border-border bg-bg px-3 py-2.5 text-sm outline-none focus:border-accent" placeholder="password" type="password" value={pw} onChange={(e) => setPw(e.target.value)} />
+          <button className="w-full rounded-xl bg-accent py-2.5 text-sm font-semibold text-accent-fg hover:opacity-90">{mode === 'in' ? 'Sign in' : 'Create account'}</button>
         </form>
-        <button className="mt-3 text-xs text-gray-500 hover:text-gray-300" onClick={() => setMode(mode === 'in' ? 'up' : 'in')}>
+        <button className="mt-3 text-xs text-muted hover:text-fg" onClick={() => setMode(mode === 'in' ? 'up' : 'in')}>
           {mode === 'in' ? 'Need an account? Sign up' : 'Have an account? Sign in'}
         </button>
-        {err && <p className="mt-3 text-xs text-red-400">{err}</p>}
+        {err && <p className="mt-3 text-xs text-red-500">{err}</p>}
       </div>
     </div>
   );
 }
 
 type Tab = 'chat' | 'monitors' | 'alerts' | 'settings';
-const TABS: Tab[] = ['chat', 'monitors', 'alerts', 'settings'];
+const NAV: { id: Tab; label: string; icon: React.ReactNode }[] = [
+  { id: 'chat', label: 'Chat', icon: <MessageSquare size={17} /> },
+  { id: 'monitors', label: 'Monitors', icon: <Radar size={17} /> },
+  { id: 'alerts', label: 'Alerts', icon: <Bell size={17} /> },
+  { id: 'settings', label: 'Settings', icon: <SettingsIcon size={17} /> },
+];
 
 function MainApp() {
-  // onboarded === null: checking; false: needs creds; ModelInfo[]: ready
   const [onboarded, setOnboarded] = useState<ModelInfo[] | null | false>(null);
   const [tab, setTab] = useState<Tab>('chat');
+  const { dark, toggle } = useTheme();
   const uid = auth.currentUser?.uid ?? '';
 
-  const check = async () => {
-    try {
-      setOnboarded(await listModels());
-    } catch {
-      setOnboarded(false);
-    }
-  };
   useEffect(() => {
-    void check();
+    listModels().then(setOnboarded).catch(() => setOnboarded(false));
   }, []);
 
   return (
-    <div className="flex h-full flex-col">
-      <header className="flex items-center justify-between border-b border-gray-800 px-4 py-2">
-        <div className="flex items-center gap-4">
-          <span className="font-semibold text-emerald-400">OVERWATCH</span>
-          {onboarded && (
-            <nav className="flex gap-1">
-              {TABS.map((t) => (
-                <button
-                  key={t}
-                  onClick={() => setTab(t)}
-                  className={`rounded px-2.5 py-1 text-xs capitalize ${tab === t ? 'bg-gray-800 text-gray-100' : 'text-gray-500 hover:text-gray-300'}`}
-                >
-                  {t}
-                </button>
-              ))}
-            </nav>
-          )}
+    <div className="flex h-full bg-bg text-fg">
+      {/* Nav rail */}
+      <aside className="flex w-[220px] shrink-0 flex-col border-r border-border bg-surface">
+        <div className="flex items-center gap-2 px-4 py-4">
+          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-accent-fg"><Flame size={17} /></span>
+          <span className="text-[15px] font-semibold tracking-tight">Overwatch</span>
         </div>
-        <div className="flex items-center gap-3 text-xs text-gray-400">
-          <span>{auth.currentUser?.email}</span>
-          <button onClick={() => signOutUser()} className="hover:text-gray-200">Sign out</button>
+        <div className="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-muted">Menu</div>
+        <nav className="flex flex-col gap-0.5 px-2">
+          {NAV.map((n) => (
+            <button
+              key={n.id}
+              onClick={() => setTab(n.id)}
+              className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+                tab === n.id ? 'bg-[var(--accent-soft)] font-medium text-accent' : 'text-muted hover:bg-surface-2 hover:text-fg'
+              }`}
+            >
+              {n.icon}
+              {n.label}
+            </button>
+          ))}
+        </nav>
+        <div className="mt-auto space-y-2 p-3">
+          <button onClick={toggle} className="flex w-full items-center justify-center gap-2 rounded-lg border border-border bg-surface-2 py-2 text-xs text-muted hover:text-fg">
+            {dark ? <Sun size={14} /> : <Moon size={14} />}
+            {dark ? 'Light mode' : 'Dark mode'}
+          </button>
+          <div className="flex items-center gap-2 rounded-lg px-2 py-1.5">
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent text-[11px] font-semibold text-accent-fg">
+              {(auth.currentUser?.email ?? '?')[0]?.toUpperCase()}
+            </span>
+            <span className="min-w-0 flex-1 truncate text-xs text-muted">{auth.currentUser?.email}</span>
+            <button onClick={() => signOutUser()} title="Sign out" className="text-muted hover:text-fg"><LogOut size={15} /></button>
+          </div>
         </div>
-      </header>
-      <main className="min-h-0 flex-1">
+      </aside>
+
+      {/* Main */}
+      <main className="min-h-0 min-w-0 flex-1">
         {onboarded === null && <Centered>Checking configuration…</Centered>}
-        {onboarded === false && (
-          <Centered>No LLM key found. Set ANTHROPIC_API_KEY or OLLAMA_API_KEY in .env and restart the server.</Centered>
-        )}
+        {onboarded === false && <Centered>No LLM key found. Set ANTHROPIC_API_KEY or OLLAMA_API_KEY in .env and restart the server.</Centered>}
         {onboarded && tab === 'chat' && <ChatArea uid={uid} />}
         {onboarded && tab === 'monitors' && <MonitorsTab uid={uid} />}
         {onboarded && tab === 'alerts' && <AlertsTab uid={uid} />}
@@ -128,7 +145,6 @@ function ChatArea({ uid }: { uid: string }) {
   const [activeCid, setActiveCid] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
 
-  // Auto-select the most recent conversation once loaded (if none selected).
   useEffect(() => {
     if (!activeCid && convos.length > 0) setActiveCid(convos[0].id);
   }, [convos, activeCid]);
@@ -136,8 +152,7 @@ function ChatArea({ uid }: { uid: string }) {
   const newChat = async () => {
     setCreating(true);
     try {
-      const cid = await createConversation('New chat');
-      setActiveCid(cid);
+      setActiveCid(await createConversation('New chat'));
     } catch (e) {
       console.error(e);
     } finally {
@@ -147,34 +162,26 @@ function ChatArea({ uid }: { uid: string }) {
 
   return (
     <div className="flex h-full">
-      <aside className="flex w-64 shrink-0 flex-col border-r border-gray-800">
-        <button onClick={newChat} disabled={creating} className="m-2 rounded-lg border border-gray-700 px-2 py-1.5 text-xs hover:bg-gray-800 disabled:opacity-50">
-          + New chat
-        </button>
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          {convos.length === 0 && <p className="px-3 py-2 text-xs text-gray-600">No conversations yet.</p>}
+      <aside className="flex w-64 shrink-0 flex-col border-r border-border bg-surface/50">
+        <div className="p-3">
+          <button onClick={newChat} disabled={creating} className="flex w-full items-center justify-center gap-2 rounded-xl bg-accent py-2.5 text-sm font-semibold text-accent-fg hover:opacity-90 disabled:opacity-50">
+            <Plus size={16} /> New chat
+          </button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+          {convos.length === 0 && <p className="px-2 py-2 text-xs text-muted">No conversations yet.</p>}
           {convos.map((c) => (
-            <div
-              key={c.id}
-              className={`group flex items-center border-b border-gray-800/50 hover:bg-gray-800/40 ${activeCid === c.id ? 'bg-gray-800/60' : ''}`}
-            >
+            <div key={c.id} className={`group flex items-center rounded-lg ${activeCid === c.id ? 'bg-surface-2' : 'hover:bg-surface-2/60'}`}>
               <button onClick={() => setActiveCid(c.id)} className="min-w-0 flex-1 px-3 py-2 text-left">
-                <div className="truncate text-sm text-gray-200">{c.title || 'New chat'}</div>
-                <div className="text-[10px] text-gray-600">{c.updatedAt ? new Date(c.updatedAt).toLocaleString() : ''}</div>
+                <div className="truncate text-sm">{c.title || 'New chat'}</div>
+                <div className="text-[10px] text-muted">{c.updatedAt ? new Date(c.updatedAt).toLocaleDateString() : ''}</div>
               </button>
               <button
-                title="Delete conversation"
-                onClick={async () => {
-                  try {
-                    await deleteConversation(c.id);
-                    if (activeCid === c.id) setActiveCid(null);
-                  } catch (e) {
-                    console.error(e);
-                  }
-                }}
-                className="mr-2 rounded px-1.5 py-0.5 text-gray-600 opacity-0 hover:bg-gray-700 hover:text-red-300 group-hover:opacity-100"
+                title="Delete"
+                onClick={async () => { try { await deleteConversation(c.id); if (activeCid === c.id) setActiveCid(null); } catch (e) { console.error(e); } }}
+                className="mr-1.5 rounded-md p-1 text-muted opacity-0 hover:bg-border/50 hover:text-red-500 group-hover:opacity-100"
               >
-                ×
+                <Trash2 size={14} />
               </button>
             </div>
           ))}
@@ -187,16 +194,10 @@ function ChatArea({ uid }: { uid: string }) {
   );
 }
 
-// Strip the agent-facing instructions from an injected monitor-event message,
-// leaving just the headline + raw alert for display.
 function cleanMonitor(text: string): string {
-  const head = text.split('ACT NOW')[0].trim();
-  return `🔔 ${head}`;
+  return `🔔 ${text.split('ACT NOW')[0].trim()}`;
 }
 
-// Load prior messages from Firestore, then mount the runtime seeded with them.
-// Only user / assistant-text / monitor-event messages are shown as chat bubbles;
-// tool-result blobs and empty tool-only turns are dropped.
 function ChatThread({ cid, uid }: { cid: string; uid: string }) {
   const [initial, setInitial] = useState<ThreadMessageLike[] | null>(null);
   useEffect(() => {
@@ -205,10 +206,7 @@ function ChatThread({ cid, uid }: { cid: string; uid: string }) {
         setInitial(
           ms
             .filter((m) => m.role === 'user' || m.role === 'assistant' || m.role === 'custom')
-            .map((m) => ({
-              role: m.role === 'user' ? ('user' as const) : ('assistant' as const),
-              content: m.role === 'custom' ? cleanMonitor(m.content) : m.content,
-            }))
+            .map((m) => ({ role: m.role === 'user' ? ('user' as const) : ('assistant' as const), content: m.role === 'custom' ? cleanMonitor(m.content) : m.content }))
             .filter((m) => m.content.trim() !== ''),
         ),
       )
@@ -225,47 +223,37 @@ function ChatRuntime({ cid, initialMessages }: { cid: string; initialMessages: T
     <AssistantRuntimeProvider runtime={runtime}>
       <ThreadPrimitive.Root className="flex h-full flex-col">
         <ThreadPrimitive.Viewport className="flex-1 overflow-y-auto px-4 py-6">
-          <div className="mx-auto max-w-3xl space-y-4">
+          <div className="mx-auto max-w-3xl space-y-5">
             <ThreadPrimitive.Empty>
-              <div className="mt-20 text-center text-sm text-gray-600">
-                Ask about a stock, a theme, or arm a monitor. e.g. “Is the Groww feed live?” or “Analyse Paras Defence.”
+              <div className="mt-24 text-center">
+                <span className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-[var(--accent-soft)] text-accent"><Flame size={22} /></span>
+                <div className="text-sm text-muted">Ask about a stock, a theme, or arm a monitor.<br />e.g. “Is the Groww feed live?” · “Analyse Paras Defence.”</div>
               </div>
             </ThreadPrimitive.Empty>
             <ThreadPrimitive.Messages components={{ UserMessage, AssistantMessage }} />
           </div>
         </ThreadPrimitive.Viewport>
-        <div className="border-t border-gray-800 px-4 py-3">
-          <ComposerPrimitive.Root className="mx-auto flex max-w-3xl items-end gap-2 rounded-xl border border-gray-800 bg-gray-950 px-3 py-2">
-            <ComposerPrimitive.Input rows={1} autoFocus placeholder="Message Overwatch…" className="flex-1 resize-none bg-transparent text-sm outline-none placeholder:text-gray-600" />
-            <ComposerPrimitive.Send className="rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-medium hover:bg-emerald-500">Send</ComposerPrimitive.Send>
+        <div className="px-4 pb-4">
+          <ComposerPrimitive.Root className="mx-auto flex max-w-3xl items-end gap-2 rounded-2xl border border-border bg-surface px-3 py-2 shadow-sm focus-within:border-accent">
+            <ComposerPrimitive.Input rows={1} autoFocus placeholder="Message Overwatch…" className="flex-1 resize-none bg-transparent py-1.5 text-sm outline-none placeholder:text-muted" />
+            <ComposerPrimitive.Send className="flex h-8 w-8 items-center justify-center rounded-xl bg-accent text-accent-fg hover:opacity-90"><ArrowUp size={16} /></ComposerPrimitive.Send>
           </ComposerPrimitive.Root>
+          <p className="mx-auto mt-2 max-w-3xl text-center text-[10px] text-muted">Overwatch is a scout &amp; analyst — it never places orders. Not financial advice.</p>
         </div>
       </ThreadPrimitive.Root>
     </AssistantRuntimeProvider>
   );
 }
 
-function UserMessage() {
-  return (
-    <MessagePrimitive.Root className="flex justify-end">
-      <div className="max-w-[80%] whitespace-pre-wrap rounded-2xl bg-emerald-700/80 px-4 py-2 text-sm">
-        <MessagePrimitive.Parts />
-      </div>
-    </MessagePrimitive.Root>
-  );
-}
-
-// Render assistant text parts as markdown (GFM tables/headers/bold), streaming-safe.
 function MarkdownText() {
   const part = useMessagePartText();
   return (
-    <div className="prose prose-invert prose-sm max-w-none prose-headings:mt-3 prose-headings:mb-1 prose-p:my-1.5 prose-table:my-2 prose-th:px-2 prose-th:py-1 prose-td:px-2 prose-td:py-1 prose-table:text-xs prose-pre:bg-gray-950 prose-code:text-emerald-300">
+    <div className="prose prose-sm max-w-none dark:prose-invert prose-headings:mt-3 prose-headings:mb-1 prose-p:my-1.5 prose-table:my-2 prose-th:px-2 prose-th:py-1 prose-td:px-2 prose-td:py-1 prose-table:text-xs prose-pre:bg-surface-2 prose-code:text-accent">
       <ReactMarkdown remarkPlugins={[remarkGfm]}>{part.text}</ReactMarkdown>
     </div>
   );
 }
 
-// Inline card for a Groww/custom tool call — compact chip, expandable to args/result.
 function ToolCard({ toolName, args, result, isError }: { toolName: string; args?: unknown; result?: unknown; isError?: boolean }) {
   const done = result !== undefined;
   const badge = isError ? '❌ error' : done ? '✓' : '…';
@@ -274,17 +262,17 @@ function ToolCard({ toolName, args, result, isError }: { toolName: string; args?
     return s.length > n ? s.slice(0, n) + '\n…(truncated)' : s;
   };
   return (
-    <details className="my-1 rounded-lg border border-gray-700/70 bg-gray-950/60 text-xs">
-      <summary className="cursor-pointer list-none px-2 py-1 text-gray-400">
-        🔧 <span className="font-medium text-gray-200">{toolName}</span> <span className={isError ? 'text-red-400' : done ? 'text-emerald-400' : 'text-gray-500'}>· {badge}</span>
+    <details className="my-1 rounded-lg border border-border bg-surface-2/60 text-xs">
+      <summary className="cursor-pointer list-none px-2 py-1 text-muted">
+        🔧 <span className="font-medium text-fg">{toolName}</span> <span className={isError ? 'text-red-500' : done ? 'text-accent' : 'text-muted'}>· {badge}</span>
       </summary>
-      <div className="border-t border-gray-800 px-2 py-1.5">
-        <div className="text-[10px] uppercase text-gray-600">args</div>
-        <pre className="mb-1 whitespace-pre-wrap text-gray-400">{fmt(args ?? {}, 600)}</pre>
+      <div className="border-t border-border px-2 py-1.5">
+        <div className="text-[10px] uppercase text-muted">args</div>
+        <pre className="mb-1 whitespace-pre-wrap text-muted">{fmt(args ?? {}, 600)}</pre>
         {done && (
           <>
-            <div className="text-[10px] uppercase text-gray-600">result</div>
-            <pre className="max-h-48 overflow-auto whitespace-pre-wrap text-gray-500">{fmt(result, 1500)}</pre>
+            <div className="text-[10px] uppercase text-muted">result</div>
+            <pre className="max-h-48 overflow-auto whitespace-pre-wrap text-muted">{fmt(result, 1500)}</pre>
           </>
         )}
       </div>
@@ -292,10 +280,21 @@ function ToolCard({ toolName, args, result, isError }: { toolName: string; args?
   );
 }
 
+function UserMessage() {
+  return (
+    <MessagePrimitive.Root className="flex justify-end">
+      <div className="max-w-[80%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-accent px-4 py-2.5 text-sm text-accent-fg">
+        <MessagePrimitive.Parts />
+      </div>
+    </MessagePrimitive.Root>
+  );
+}
+
 function AssistantMessage() {
   return (
-    <MessagePrimitive.Root className="flex justify-start">
-      <div className="max-w-[85%] rounded-2xl bg-gray-800/80 px-4 py-2 text-sm">
+    <MessagePrimitive.Root className="flex justify-start gap-3">
+      <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[var(--accent-soft)] text-accent"><Flame size={14} /></span>
+      <div className="max-w-[85%] rounded-2xl rounded-tl-md border border-border bg-surface px-4 py-2.5 text-sm">
         <MessagePrimitive.Parts components={{ Text: MarkdownText, tools: { Fallback: ToolCard } }} />
       </div>
     </MessagePrimitive.Root>
