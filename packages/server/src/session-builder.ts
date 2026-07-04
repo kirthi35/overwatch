@@ -8,6 +8,7 @@ import {
   createAgentSessionServices,
   createAgentSessionFromServices,
   type AgentSession,
+  type ExtensionFactory,
 } from '@earendil-works/pi-coding-agent';
 import type { Model } from '@earendil-works/pi-ai';
 import { makeOverwatchExtension, type UserContext } from '@overwatch/core';
@@ -28,6 +29,8 @@ export interface BuildSessionOptions {
   agentDir?: string;
   /** Per-session scratch cwd. Defaults to a temp dir. */
   cwd?: string;
+  /** Extra extension factories to attach alongside the doctrine (e.g. alert injection, diagnostics). */
+  extraExtensions?: ExtensionFactory[];
 }
 
 const GLM_MODEL_DEFAULTS = { reasoning: false, input: ['text'] as ('text' | 'image')[], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 128000, maxTokens: 16384 };
@@ -66,6 +69,10 @@ export function availableModels(registry: ModelRegistry): Array<{ provider: stri
   return registry.getAvailable().map((m: any) => ({ provider: m.provider, id: m.id, name: m.name ?? m.id }));
 }
 
+// Preferred current Claude defaults (Pi's bundled catalog also lists stale/EOL ids;
+// never default to the first-in-catalog, which is an old model). First match wins.
+const ANTHROPIC_DEFAULT_ORDER = ['claude-sonnet-4-5', 'claude-sonnet-4-6', 'claude-opus-4-5', 'claude-opus-4-8', 'claude-haiku-4-5'];
+
 function pickModel(registry: ModelRegistry, u: UserContext, desired?: { provider: string; id: string }): Model<any> | undefined {
   const avail = registry.getAvailable();
   if (desired) {
@@ -74,6 +81,10 @@ function pickModel(registry: ModelRegistry, u: UserContext, desired?: { provider
   }
   if (u.llm.provider === 'glm' && u.llm.ollama) {
     const m = registry.find('ollama-cloud', u.llm.ollama.modelId);
+    if (m) return m;
+  }
+  for (const id of ANTHROPIC_DEFAULT_ORDER) {
+    const m = registry.find('anthropic', id);
     if (m) return m;
   }
   return (avail as any[]).find((m) => m.provider === 'anthropic') ?? avail[0];
@@ -97,7 +108,7 @@ export async function buildUserSession(u: UserContext, opts: BuildSessionOptions
     resourceLoaderOptions: {
       // The doctrine, parameterized for this user. alertBridge:false — the server
       // surfaces monitor fires via its own Firestore listener (phase 5), not file-tailing.
-      extensionFactories: [makeOverwatchExtension(u, { alertBridge: false })],
+      extensionFactories: [makeOverwatchExtension(u, { alertBridge: false }), ...(opts.extraExtensions ?? [])],
     },
   });
 
