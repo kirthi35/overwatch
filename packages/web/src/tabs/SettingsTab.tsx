@@ -3,9 +3,12 @@ import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useCollection } from '../lib/useFirestore';
 
+type Category = 'constitution' | 'skill' | 'shared' | 'lesson';
+
 interface Skill {
   id: string;
   name?: string;
+  category?: Category;
   description?: string;
   superseded_by?: string | null;
   body?: string;
@@ -15,8 +18,9 @@ export function SettingsTab({ uid }: { uid: string }) {
   return (
     <div className="mx-auto max-w-4xl space-y-6 p-6">
       <h2 className="text-sm font-semibold">Settings</h2>
-      <SkillsViewer />
       <CapitalCard uid={uid} />
+      <SectorMapCard uid={uid} />
+      <DoctrineViewer />
       <p className="text-xs text-muted">
         LLM + Groww keys and the active model are configured in <code className="rounded bg-surface-2 px-1 text-fg">.env</code> (dev mode).
       </p>
@@ -24,34 +28,63 @@ export function SettingsTab({ uid }: { uid: string }) {
   );
 }
 
-function SkillsViewer() {
+// ── Doctrine viewer (read-only): Constitution / Skills / Shared / Lessons ──────────
+const GROUPS: { category: Category; title: string; blurb: string }[] = [
+  { category: 'constitution', title: 'Constitution', blurb: 'Standing orders — outrank every skill.' },
+  { category: 'skill', title: 'Doctrine skills', blurb: 'The staged analysis pipeline.' },
+  { category: 'shared', title: 'Shared protocols', blurb: 'Read by the analytical stages.' },
+  { category: 'lesson', title: 'Lessons', blurb: 'Graded case evidence doctrine cites (evidence: L-*).' },
+];
+
+function DoctrineViewer() {
   const skills = useCollection<Skill>('skills');
   const [openId, setOpenId] = useState<string | null>(null);
-  const sorted = [...skills].sort((a, b) => (a.name || a.id).localeCompare(b.name || b.id));
+  // Default missing category to 'skill' so docs seeded before categories still render.
+  const cat = (s: Skill): Category => s.category ?? 'skill';
 
   return (
     <section className="rounded-2xl border border-border bg-surface p-4">
-      <h3 className="mb-3 text-sm font-semibold">Doctrine skills <span className="text-muted">({skills.length})</span></h3>
-      <div className="space-y-1">
-        {sorted.map((s) => (
-          <div key={s.id} className="rounded-lg border border-border/60">
-            <button onClick={() => setOpenId(openId === s.id ? null : s.id)} className="flex w-full items-center justify-between px-3 py-2 text-left hover:bg-surface-2">
-              <span className="text-sm">
-                <span className={s.superseded_by ? 'text-muted line-through' : 'text-fg'}>{s.name || s.id}</span>
-                {s.superseded_by && <span className="ml-2 text-[10px] text-muted">→ {s.superseded_by}</span>}
-              </span>
-              <span className="text-muted">{openId === s.id ? '−' : '+'}</span>
-            </button>
-            {openId === s.id && (
-              <pre className="max-h-96 overflow-y-auto whitespace-pre-wrap border-t border-border/60 bg-surface-2 p-3 text-xs text-muted">{s.body || s.description || '(no content)'}</pre>
-            )}
-          </div>
-        ))}
+      <h3 className="mb-3 text-sm font-semibold">Doctrine <span className="text-muted">({skills.length})</span> <span className="ml-1 text-xs font-normal text-muted">read-only</span></h3>
+      {skills.length === 0 && (
+        <p className="text-xs text-muted">No doctrine published yet. Run <code className="rounded bg-surface-2 px-1">seed-skills</code> on the server.</p>
+      )}
+      <div className="space-y-4">
+        {GROUPS.map((g) => {
+          const items = skills
+            .filter((s) => cat(s) === g.category)
+            .sort((a, b) => (a.name || a.id).localeCompare(b.name || b.id));
+          if (items.length === 0) return null;
+          return (
+            <div key={g.category}>
+              <div className="mb-1 flex items-baseline gap-2">
+                <h4 className="text-xs font-semibold uppercase tracking-wider text-accent">{g.title}</h4>
+                <span className="text-[10px] text-muted">{g.blurb}</span>
+              </div>
+              <div className="space-y-1">
+                {items.map((s) => (
+                  <div key={s.id} className="rounded-lg border border-border/60">
+                    <button onClick={() => setOpenId(openId === s.id ? null : s.id)} className="flex w-full items-center justify-between px-3 py-2 text-left hover:bg-surface-2">
+                      <span className="text-sm">
+                        <span className={s.superseded_by ? 'text-muted line-through' : 'text-fg'}>{s.name || s.id}</span>
+                        {s.superseded_by && <span className="ml-2 text-[10px] text-muted">→ {s.superseded_by}</span>}
+                      </span>
+                      <span className="text-muted">{openId === s.id ? '−' : '+'}</span>
+                    </button>
+                    {openId === s.id && (
+                      <pre className="max-h-96 overflow-y-auto whitespace-pre-wrap border-t border-border/60 bg-surface-2 p-3 text-xs text-muted">{s.body || s.description || '(no content)'}</pre>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })}
       </div>
     </section>
   );
 }
 
+// ── Capital book ──────────────────────────────────────────────────────────────────
 function CapitalCard({ uid }: { uid: string }) {
   const ref = doc(db, `users/${uid}/settings/capital`);
   const [capital, setCapital] = useState('');
@@ -97,6 +130,67 @@ function CapitalCard({ uid }: { uid: string }) {
         <button className="rounded-xl bg-accent px-3 py-1.5 text-sm font-medium text-accent-fg hover:opacity-90">Save capital</button>
         {msg && <p className="text-xs text-muted">{msg}</p>}
       </form>
+    </section>
+  );
+}
+
+// ── Sector → index map (regime-gate Stage 0) ────────────────────────────────────────
+interface MapRow { sector: string; index: string }
+
+function SectorMapCard({ uid }: { uid: string }) {
+  const ref = doc(db, `users/${uid}/settings/sectorMap`);
+  const [rows, setRows] = useState<MapRow[]>([]);
+  const [msg, setMsg] = useState('');
+
+  useEffect(() => {
+    getDoc(ref).then((s) => {
+      const m = (s.data() as any)?.map as Record<string, string> | undefined;
+      if (m) setRows(Object.entries(m).map(([sector, index]) => ({ sector, index: String(index) })));
+    }).catch(() => {});
+  }, [uid]);
+
+  const setRow = (i: number, patch: Partial<MapRow>) =>
+    setRows((rs) => rs.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+  const addRow = () => setRows((rs) => [...rs, { sector: '', index: '' }]);
+  const delRow = (i: number) => setRows((rs) => rs.filter((_, j) => j !== i));
+
+  const save = async () => {
+    setMsg('');
+    const map: Record<string, string> = {};
+    for (const r of rows) {
+      const k = r.sector.trim();
+      const v = r.index.trim();
+      if (k && v) map[k] = v;
+    }
+    try {
+      await setDoc(ref, { map, asof: new Date().toISOString().slice(0, 10) });
+      setMsg(`Saved ${Object.keys(map).length} mapping${Object.keys(map).length === 1 ? '' : 's'}.`);
+    } catch (e: any) {
+      setMsg(e.message ?? String(e));
+    }
+  };
+
+  const input = 'rounded-lg border border-border bg-bg px-2 py-1.5 text-sm outline-none focus:border-accent';
+  return (
+    <section className="rounded-2xl border border-border bg-surface p-4">
+      <h3 className="mb-1 text-sm font-semibold">Sector → index map</h3>
+      <p className="mb-3 text-xs text-muted">Maps a stock's sector to its proxy index for the regime gate. Unmapped sectors fall back to Nifty 500.</p>
+      <div className="max-w-xl space-y-2">
+        {rows.length === 0 && <p className="text-xs text-muted">No mappings yet.</p>}
+        {rows.map((r, i) => (
+          <div key={i} className="flex items-center gap-2">
+            <input className={`${input} flex-1`} placeholder="sector (e.g. defence)" value={r.sector} onChange={(e) => setRow(i, { sector: e.target.value })} />
+            <span className="text-muted">→</span>
+            <input className={`${input} flex-1`} placeholder="index (e.g. NIFTY INDIA DEFENCE)" value={r.index} onChange={(e) => setRow(i, { index: e.target.value })} />
+            <button onClick={() => delRow(i)} className="rounded-lg border border-border px-2 py-1 text-xs text-muted hover:bg-surface-2" aria-label="remove">✕</button>
+          </div>
+        ))}
+        <div className="flex items-center gap-2 pt-1">
+          <button onClick={addRow} className="rounded-xl border border-border px-3 py-1.5 text-sm text-muted hover:bg-surface-2">+ Add mapping</button>
+          <button onClick={save} className="rounded-xl bg-accent px-3 py-1.5 text-sm font-medium text-accent-fg hover:opacity-90">Save map</button>
+          {msg && <span className="text-xs text-muted">{msg}</span>}
+        </div>
+      </div>
     </section>
   );
 }

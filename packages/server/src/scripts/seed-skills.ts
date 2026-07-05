@@ -3,15 +3,20 @@ import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { getDb } from '../firebase.js';
 
-// Mirror the version-controlled doctrine skills (runtime/skills/*.md) into a GLOBAL
-// read-only `skills` Firestore collection that powers the Settings > Skills viewer.
-// Skills stay authored in git (view-only in v1); this just publishes them for display.
+// Mirror the version-controlled doctrine (runtime/skills/*.md, runtime/skills/_shared/*.md,
+// and theses/lessons/*.md) into a GLOBAL read-only `skills` Firestore collection that powers
+// the Settings > Doctrine viewer. Everything stays authored in git (view-only in v1); this
+// just publishes it for display, tagged with a `category` so the viewer can group it.
 // Run: OVERWATCH_FIREBASE_KEY=/abs/key.json npm run seed-skills -w @overwatch/server
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // dist/scripts -> repo root is four levels up.
 const REPO_ROOT = path.resolve(__dirname, '../../../..');
 const SKILLS_DIR = path.join(REPO_ROOT, 'runtime', 'skills');
+const SHARED_DIR = path.join(SKILLS_DIR, '_shared');
+const LESSONS_DIR = path.join(REPO_ROOT, 'theses', 'lessons');
+
+type Category = 'constitution' | 'skill' | 'shared' | 'lesson';
 
 // Minimal YAML-frontmatter reader (name, description, triggers, superseded_by).
 function parseFrontmatter(text: string): { name?: string; description?: string; triggers: string[]; superseded_by?: string } {
@@ -50,16 +55,28 @@ function parseFrontmatter(text: string): { name?: string; description?: string; 
   return out;
 }
 
-async function main() {
-  const db = getDb();
-  const files = readdirSync(SKILLS_DIR).filter((f) => f.endsWith('.md'));
+function listMd(dir: string): string[] {
+  try {
+    return readdirSync(dir).filter((f) => f.endsWith('.md'));
+  } catch {
+    return []; // dir may not exist (e.g. no lessons yet)
+  }
+}
+
+async function seedDir(
+  db: ReturnType<typeof getDb>,
+  dir: string,
+  categoryFor: (file: string) => Category,
+): Promise<number> {
   let n = 0;
-  for (const file of files) {
-    const body = readFileSync(path.join(SKILLS_DIR, file), 'utf8');
+  for (const file of listMd(dir)) {
+    const body = readFileSync(path.join(dir, file), 'utf8');
     const fm = parseFrontmatter(body);
     const id = fm.name || file.replace(/\.md$/, '');
+    const category = categoryFor(file);
     await db.doc(`skills/${id}`).set({
       name: id,
+      category,
       description: fm.description || '',
       triggers: fm.triggers,
       superseded_by: fm.superseded_by || null,
@@ -67,9 +84,20 @@ async function main() {
       updatedAt: new Date().toISOString(),
     });
     n++;
-    console.log(`  mirrored skills/${id}`);
+    console.log(`  mirrored skills/${id} (${category})`);
   }
-  console.log(`Seeded ${n} skills into the global 'skills' collection.`);
+  return n;
+}
+
+async function main() {
+  const db = getDb();
+  // Top-level doctrine skills. (No frontmatter-less files live here.)
+  let n = await seedDir(db, SKILLS_DIR, () => 'skill');
+  // Shared protocols + the constitution live under _shared/.
+  n += await seedDir(db, SHARED_DIR, (f) => (f.startsWith('standing-orders') ? 'constitution' : 'shared'));
+  // Evidence lesson library (theses/lessons/) — cited by doctrine via `evidence: L-*`.
+  n += await seedDir(db, LESSONS_DIR, () => 'lesson');
+  console.log(`Seeded ${n} doctrine docs into the global 'skills' collection.`);
 }
 
 main().then(

@@ -104,4 +104,15 @@ has <sym>-card                                 -> CARDED
 - Worker changes — none.
 
 ## Firestore rules delta
-Add owner-only rule for `users/{uid}/journal/{doc}` (mirror the existing per-user rules).
+None. `firestore.rules` already has owner-only `users/{uid}/journal/{tradeId}` and
+`users/{uid}/settings/{settingId}`, and global read-only `skills/{skillId}`.
+
+## PR2 — DONE (Settings surface)
+- **Capital editor** already existed (`SettingsTab` → `CapitalCard`, writes `settings/capital`).
+- **Sector-map editor** added (`SectorMapCard`, writes `settings/sectorMap` as `{ map, asof }`).
+  regime-gate falls back to Nifty 500 when unmapped, so this degrades gracefully; wiring the
+  server agent to *read* the map (a settings read tool) is a later follow-up.
+- **Doctrine/Lessons viewer**: `seed-skills.ts` now publishes `_shared/**` (constitution +
+  shared protocols) and `theses/lessons/**` alongside skills, tagged by `category`; the
+  viewer groups Constitution / Doctrine skills / Shared protocols / Lessons (read-only).
+  Requires re-running `seed-skills` on deploy to populate the new categories.

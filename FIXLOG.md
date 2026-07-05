@@ -60,10 +60,12 @@ Format: `[P<n>.<task>] <file> — DONE|SKIPPED(<reason>)`
 [core] packages/core/src/doctrine.ts — DONE (SKILL REGISTRY now lists the new mandatory stages: regime-gate Stage 0, portfolio-risk 5a, pre-trade-commit 5c, momentum-campaign, trade-journal; entry-exit-gate entry states its Gate 0 pre-reqs. ROUTING's stale deprecated `risk-gate.md` reference replaced with `entry-exit-gate.md` + Gate 0 pre-reqs. Without this the new stages are invisible to the model and Gate 0 cannot be satisfied.)
 
 ## Notes / known follow-ups
-- Lesson-library seeding: `theses/lessons/**` is version-controlled and its `evidence: L-*`
-  pointers resolve in the repo, but the seed pipeline (seed.mjs / seed-skills.ts) currently
-  carries skills only — lessons are NOT yet copied into the CLI `~/.overwatch/theses` workspace
-  or into Firestore. Follow-up if the model should be able to open a cited lesson at runtime.
+- Lesson-library seeding: `seed-skills.ts` now ALSO publishes `runtime/skills/_shared/**`
+  (incl. the constitution) and `theses/lessons/**` into the global `skills` Firestore
+  collection, tagged by `category`, so the Settings > Doctrine viewer shows them (PR2).
+  Still outstanding: the CLI `seed.mjs` doesn't copy lessons into `~/.overwatch/theses`, and
+  the agent auto-loader reads only `runtime/skills` (lessons are cited by ID, not auto-loaded
+  into context — acceptable; they are evidence, not active doctrine the agent must load).
 - Acceptance check #2 (`grep "step outside the.*framework" skills/`) returns nothing: the
   constitutional prohibition in standing-orders Order 2 is line-wrapped ("step outside" /
   "the framework" on separate lines), so the line-based grep does not match it. The phrase is
