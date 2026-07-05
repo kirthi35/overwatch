@@ -115,7 +115,7 @@ export async function buildUserSession(u: UserContext, opts: BuildSessionOptions
       // surfaces monitor fires via its own Firestore listener (phase 5), not file-tailing.
       extensionFactories: opts.noDoctrine
         ? [...(opts.extraExtensions ?? [])]
-        : [makeOverwatchExtension(u, { alertBridge: false }), ...(opts.extraExtensions ?? [])],
+        : [makeOverwatchExtension(u, { alertBridge: false, shellTools: false }), ...(opts.extraExtensions ?? [])],
     },
   });
 

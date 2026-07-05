@@ -124,6 +124,74 @@ export function registerCustomTools(api: ExtensionAPI, u: UserContext) {
     },
   });
 
+  // list_monitors — READ the user's armed monitors + their last-polled state, so the
+  // model never has to shell out (`cat monitors/*.json`) to inspect them. The returned
+  // state is CONFIG + a PAST reading written by the background worker — NOT a live
+  // quote (DATA INTEGRITY rule 3); the tool labels each with its lastPoll + a STALE hint.
+  api.registerTool({
+    name: 'list_monitors',
+    label: 'List Monitors',
+    description:
+      'List the currently armed monitors and their last-polled state (lastLtp, lastPoll, ' +
+      'fired, breakoutAlerted, blindLevel, consecutiveFails). This is CONFIG plus a PAST, ' +
+      'timestamped reading — NOT a live quote. To get the live price, use the Groww quote ' +
+      'tool. Optionally pass a name to inspect a single monitor.',
+    parameters: Type.Object({
+      name: Type.Optional(Type.String({ description: 'Inspect only this monitor (its arm id). Omit to list all.' })),
+    }),
+    execute: async (_toolCallId, args: any) => {
+      try {
+        const monitors: Monitor[] = args?.name
+          ? ([await u.store.getMonitor(args.name)].filter(Boolean) as Monitor[])
+          : await u.store.listMonitors();
+        if (monitors.length === 0) {
+          const text = args?.name ? `No monitor named '${args.name}'.` : 'No monitors are currently armed.';
+          return { content: [{ type: 'text', text }], details: { count: 0, monitors: [] as any[] } };
+        }
+        const view = monitors.map((m) => {
+          const st = m.state || ({} as NonNullable<Monitor['state']>);
+          const lastPollIso = st.lastPoll ? new Date(st.lastPoll).toISOString() : null;
+          return {
+            name: m.name,
+            symbol: m.symbol,
+            mode: m.mode,
+            poll_minutes: m.poll_minutes,
+            time_gate_ist: m.time_gate_ist,
+            conversationId: m.conversationId,
+            gates: m.gates,
+            state: {
+              fired: st.fired ?? false,
+              breakoutAlerted: st.breakoutAlerted ?? false,
+              blindLevel: st.blindLevel ?? null,
+              consecutiveFails: st.consecutiveFails ?? 0,
+              // These are STALE readings — labelled so the model never cites them as live.
+              lastLtp_STALE: st.lastLtp ?? null,
+              lastRatio_STALE: st.lastRatio ?? null,
+              lastGreen_STALE: st.lastGreen ?? null,
+              lastPoll: lastPollIso,
+              lastError: st.lastError ?? null,
+              confirmedAt: st.confirmedAt ?? null,
+            },
+          };
+        });
+        const summary = view
+          .map((m) => {
+            const s = m.state;
+            const ltp = s.lastLtp_STALE != null ? `₹${s.lastLtp_STALE} (last polled ${s.lastPoll || 'never'}, STALE)` : 'no reading yet';
+            const status = s.fired ? 'FIRED' : s.blindLevel ? `BLIND:${s.blindLevel}` : 'armed';
+            return `- ${m.symbol} (${m.name}): ${status}; ${ltp}`;
+          })
+          .join('\n');
+        return {
+          content: [{ type: 'text', text: `${monitors.length} monitor(s). These are STALE, last-polled readings — NOT live quotes:\n${summary}` }],
+          details: { count: monitors.length, monitors: view as any[] },
+        };
+      } catch (e: any) {
+        return { content: [{ type: 'text', text: `list_monitors: failed — ${e.message}` }], details: { count: 0, monitors: [] as any[] } };
+      }
+    },
+  });
+
   // write_thesis — persist a per-symbol thesis / trade-card / active-position JSON.
   // Replaces the old shell-write-to-~/.overwatch path so the built-in bash/write
   // tools can be disabled on a shared multi-tenant host (see the server build).
