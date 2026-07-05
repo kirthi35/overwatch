@@ -10,7 +10,7 @@ description: >
   any "X is booming / X is the next big thing / who plays X" phrasing, even without the word
   "stock". Do NOT use when the user already named a specific stock (use
   stock-thesis-validator) or for an event/news shock (use macro-to-india-mapper).
-compatibility: Groww MCP (read-only), web_search
+compatibility: Groww MCP (read-only) · web_search PENDING (operator supplies screener/news input until a search tool exists — ADR 0003)
 ---
 
 # Theme-to-Stock Scout
@@ -42,8 +42,9 @@ For each link, list the listed names and grade exposure:
 A "theme stock" with trivial exposure is a trap — name it and drop it.
 
 ### Step 3 — Build the candidate set
-`web_search` for the listed players per link (Screener.in, Trendlyne, company filings).
-Resolve each via Groww `curate_symbols`. Aim for 4–8 real candidates across the chain.
+web_search is not yet wired (ADR 0003) — ask the OPERATOR to supply the listed players /
+screener output per link (Screener.in, Trendlyne, filings); never invent tickers (Standing
+Order 8). Resolve each via Groww `curate_symbols`. Aim for 4–8 real candidates across the chain.
 
 ### Step 4 — Screen each candidate
 - **Exposure purity** — how much of the business is actually the theme (Step 2 grade).

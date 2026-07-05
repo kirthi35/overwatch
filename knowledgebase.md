@@ -4,9 +4,12 @@
 CLI; **this branch (`feat/web-app-monorepo`) turns it into a multi-tenant React +
 Firebase web app** on an npm-workspaces monorepo, deployed on a Pi box.
 **Branch:** `feat/web-app-monorepo` (was `feat/telegram-alert-delivery`)
-**Last updated:** 2026-07-05 (added **Part B** — the web-app pivot: monorepo, Fastify
-API, monitor worker, React SPA, and production deployment. Sections 1–15 below still
-describe the original single-user CLI, which now lives in `packages/cli` and still runs.)
+**Last updated:** 2026-07-05 (**Part B** — the web-app pivot: monorepo, Fastify API,
+monitor worker, React SPA, production deployment; **plus** the 2026-07-04→05 doctrine
+audit remediation — see [`FIXLOG.md`](./FIXLOG.md): the `standing-orders` constitution,
+lesson library, six new pipeline stages, symbol-agnostic sweep; and the **Trades** tab +
+Settings surface — see [ADR 0004](./docs/adr/0004-trades-tab-and-trade-lifecycle-model.md).
+Sections 1–15 describe the original single-user CLI, which now lives in `packages/cli`.)
 
 Single source of truth for the codebase. Pairs with [`CONTEXT.md`](./CONTEXT.md)
 (the glossary / ubiquitous language) and [`docs/adr/`](./docs/adr/) (why decisions
@@ -163,8 +166,8 @@ REGISTRY = the doctrine pipeline** (§5), RULES OF ENGAGEMENT (the entry gates),
 MONITORING two-mode instructions, MONITOR EVENTS handling, and ROUTING. It is a
 lean dispatcher — heavy detail lives in the on-demand skills.
 
-> ⚠ The RULES OF ENGAGEMENT still state the no-chase RSI as **70–75**; the mature
-> skills say **75–78** (open thread #1, §15).
+> ✅ No-chase RSI is **75–78** everywhere — `buildMasterPrompt` (RULES OF ENGAGEMENT),
+> the skills, and `idea.md` (reconciled 2026-07-05; was open thread #1, now closed).
 
 ---
 
@@ -176,27 +179,41 @@ staged pipeline — see `CONTEXT.md` § "The doctrine pipeline" and ADR 0001.
 
 | Stage | Skill | Role | Status |
 |---|---|---|---|
-| 1 | `macro-to-india-mapper` | macro/global event → Indian theme | ⏳ stub (needs authored doctrine) |
-| 2 | `theme-to-stock-scout` | theme → candidate stock(s) | ⏳ stub |
-| 3 | `stock-thesis-validator` | is the driver ("why") true + break-triggers | ⏳ stub |
-| 4 | `valuation-cycle-analyzer` | HOW HIGH / HOW FAST / HOW LONG (capacity, never a target) | ✅ authored (verbatim) |
-| 5 | `swing-horizon-sizer` | is the bet worth it over the horizon + share count; **NO-BET** valid | ✅ authored (verbatim) |
-| 6 | `entry-exit-gate` | WHEN: daily-close, order-book ≤ 3:1, closed green reversal, no-chase | ⚙ functional stub (from idea.md gates) |
-| — | `_shared/multi-timeframe-protocol.md` | structure read the analytical stages run first | ⏳ stub |
+| — | `_shared/standing-orders.md` | **CONSTITUTION** — 11 standing orders; outrank every skill; loaded every session | ✅ authored |
+| 0 | `regime-gate` | is NEW momentum risk allowed today (Nifty/sector trend + extension) | ✅ authored |
+| 1 | `macro-to-india-mapper` | macro/global event → Indian theme (operator-supplied; web_search PENDING) | ✅ authored |
+| 2 | `theme-to-stock-scout` | theme → candidate stock(s) + relative-strength rank | ✅ authored |
+| 3 | `stock-thesis-validator` | is the driver true + break-triggers + valuation-refuted cap | ✅ authored |
+| 4 | `valuation-cycle-analyzer` | HOW HIGH / HOW FAST / HOW LONG (capacity, never a target) | ✅ authored |
+| 5a | `portfolio-risk` | BOOK layer: capital, per-trade budget, total heat, correlation, event blackout | ✅ authored |
+| 5b | `swing-horizon-sizer` | is the bet worth it over the horizon + share count; **NO-BET** valid | ✅ authored |
+| 5c | `pre-trade-commit` | lock an immutable trade card before ENTER | ✅ authored |
+| 6 | `entry-exit-gate` | WHEN: Gate 0 (sizer GO + regime GO + book clears) → daily-close, order-book ≤ 3:1, closed green reversal, no-chase (RSI 75–78), two-mode (DIP/BREAKOUT) | ✅ authored |
+| — | `_shared/multi-timeframe-protocol.md` | structure read the analytical stages run first (warm-up ≥6M rule) | ✅ authored |
+| ops | `momentum-campaign` | time-boxed momentum swing as a disciplined campaign | ✅ authored |
+| ops | `position-manager` | manage an OPEN position — trail / scale / exit | ✅ authored |
+| ops | `trade-journal` | on every CLOSE record the trade; every 10, expectancy + adherence | ✅ authored |
 | ops | `monitor-watch` | watch a symbol while the CLI is open | ✅ |
 | ops | `monitor-builder` | spawn an unattended daemon | ✅ |
+
+> **Post-audit hardening (2026-07-04→05, see [`FIXLOG.md`](./FIXLOG.md)):** the six
+> stages above `regime-gate`, `portfolio-risk`, `pre-trade-commit`, `momentum-campaign`,
+> `trade-journal`, and the `standing-orders` constitution were added; all skills were
+> swept symbol-agnostic (no stock names in rules) with incident evidence moved to the
+> **lesson library** `theses/lessons/L-*.md` (cited by doctrine as `evidence: L-<date>`).
 
 **Deprecated redirects** (kept so old prompts resolve; `superseded_by:` in
 frontmatter; the auto-loader never injects them):
 `valuation-campaign` → `valuation-cycle-analyzer` ·
 `position-sizing` → `swing-horizon-sizer` ·
 `risk-gate` → `entry-exit-gate` ·
-`momentum-raid` → retired (entry timing folds into `entry-exit-gate`; restorable).
+`momentum-raid` → **restored as `momentum-campaign`** (disciplined, time-boxed, obeys the standing orders).
 
 **Sizing formula** (canonical, from `swing-horizon-sizer`): `Shares =
-Risk_Budget ÷ (Entry − Stop)`, round **down**. Risk budget = operator-named ₹, else
-`account_capital × 1%`; conviction nudges it within preset bounds and never
-overrides the stop math. Notional cap 25% of capital. Equities only (no F&O lots).
+Risk_Budget ÷ (Entry − Stop)`, round **down**. The risk budget now comes from
+`portfolio-risk` (capital × risk_pct_per_trade), never an ad-hoc number; conviction
+nudges it within preset bounds and never overrides the stop math (Standing Orders 4, 5).
+Notional cap 25% of capital. Equities only (no F&O lots).
 
 ---
 
@@ -468,7 +485,7 @@ runtime/            (CJS realm — seeded into ~/.overwatch)
   skills/_shared/multi-timeframe-protocol.md
 test-mcp.ts         ⚠ stale scratch probe (uses retired SSEClientTransport + fake token)
 CONTEXT.md          glossary / ubiquitous language
-docs/adr/000{1,2,3}-*.md   architecture decisions
+docs/adr/000{1..4}-*.md   architecture decisions (0004 = Trades tab data model)
 ```
 
 ---
@@ -478,7 +495,11 @@ docs/adr/000{1,2,3}-*.md   architecture decisions
 ```
 ~/.overwatch/
 ├── skills/          doctrine pipeline + monitor playbooks (+ _shared/)
-├── theses/          thesis CONFIG JSON (<sym>.json)          ← input
+├── theses/          thesis/card/position JSON + journal.jsonl + lessons/  ← input + evidence
+│   ├── <sym>.json / <sym>-card.json / <sym>-active-position.json
+│   ├── journal.jsonl      closed-trade log (trade-journal skill)
+│   ├── _capital.json / _sector-index-map.json   (portfolio-risk / regime-gate)
+│   └── lessons/L-*.md     graded case evidence doctrine cites (evidence: L-<date>)
 ├── thesis/          daemon STATE files (.state_<sym>.json)   ← runtime state
 ├── monitors/        in-session arm files (<name>.json)
 ├── daemons/         seeded runtime + generated per-thesis daemons
@@ -495,20 +516,21 @@ docs/adr/000{1,2,3}-*.md   architecture decisions
 
 ## 15. Known Gaps & Divergences
 
-**Open doctrine threads (flagged during reconcile, none block the build):**
-1. **No-chase RSI:** master prompt says `70–75`; mature skills say `75–78`. Pick a
-   canonical number (safety-relevant — not changed unilaterally).
-2. **`web_search`:** `valuation-cycle-analyzer` (step 5) and the `macro`/`validator`
-   stubs need it, but idea.md defers it to V2. Decide: pull into scope or operator
-   supplies news manually — [ADR 0003](./docs/adr/0003-mature-doctrine-assumes-web-search.md).
-3. **Four stub skills** await authored doctrine: `macro-to-india-mapper`,
-   `theme-to-stock-scout`, `stock-thesis-validator`, `_shared/multi-timeframe-protocol`.
-   The agent must flag stubs, not invent rules.
-4. **`momentum-raid` retired** — confirm, or restore as a distinct momentum mode.
-5. **`entry-exit-gate`** thresholds are reconstructed from idea.md — confirm the
-   RSI number, the 3:1 order-book abort, and the first-15–20-min distrust window.
+**Open doctrine threads — mostly RESOLVED in the 2026-07-04→05 audit remediation (see [`FIXLOG.md`](./FIXLOG.md)):**
+1. **No-chase RSI:** ✅ RESOLVED — canonical **75–78** across code (`buildMasterPrompt`) and
+   all skills; `idea.md` updated to match.
+2. **`web_search`:** ✅ RESOLVED (deferred) — no search tool, operator-supplied; the four
+   skills that referenced it degrade gracefully and mark it PENDING (Standing Order 8) —
+   [ADR 0003](./docs/adr/0003-mature-doctrine-assumes-web-search.md).
+3. **Stub skills:** ✅ RESOLVED — `theme-to-stock-scout`, `stock-thesis-validator`,
+   `_shared/multi-timeframe-protocol`, and `macro-to-india-mapper` are all authored;
+   `entry-exit-gate` is no longer a "functional stub" (Gate 0 + two-mode).
+4. **`momentum-raid`:** ✅ RESOLVED — restored as `momentum-campaign` (disciplined,
+   time-boxed, obeys the standing orders).
+5. **`entry-exit-gate` thresholds:** ✅ RESOLVED — RSI 75–78, 3:1 order-book abort, and the
+   first-15–20-min distrust window confirmed; Gate 0 + two-mode entry added.
 6. **Daily-drawdown gate is advisory** in V1 (no holdings tool wired; Groww P&L
-   fields unconfirmed) — [ADR 0002](./docs/adr/0002-drawdown-gate-is-advisory.md).
+   fields unconfirmed) — **still open** — [ADR 0002](./docs/adr/0002-drawdown-gate-is-advisory.md).
 
 **Code-level notes worth knowing:**
 - **Alert-bridge coverage:** its state-file path watches only `~/.overwatch/thesis/`
@@ -609,7 +631,8 @@ users/{uid}
   conversations/{cid}  { title, model:{provider,id}, createdAt, updatedAt, source? }
     messages/{seq}     { seq, role, content, msg (verbatim Pi message), ts }
   monitors/{name}      { …arm config…, conversationId, gates:{…}, state:{…} }
-  theses/{id}          thesis / trade-card / active-position JSON
+  theses/{id}          thesis / trade-card / active-position JSON (<sym> / <sym>-card / <sym>-active-position)
+  journal/{autoId}     closed-trade records (trade-journal) — the Trades tab's CLOSED stage + expectancy feed
   alerts/{autoId}      { ts, severity, message, monitorName?, conversationId?, terminal?, surfaced? }
 skills/{name}          (GLOBAL, read-only) — powers the Settings viewer
 ```
@@ -767,8 +790,15 @@ deps; no `@overwatch/*`), so Netlify builds it directly.
   → `POST …/abort`. On open, rehydrates messages from Firestore (filtering user/assistant/
   custom, cleaning monitor-event text). Markdown via react-markdown + remark-gfm. Copy
   button (`ActionBarPrimitive.Copy`). Monitor fires render inline so the user can reply.
-- **Firestore onSnapshot** drives the conversation list, Monitors, and Alerts tabs (live
-  whether or not a session is warm). Settings shows skills (view-only).
+- **Trades tab** (`TradesTab`): correlates the symbol-keyed theses docs (`<sym>` / `-card`
+  / `-active-position`) + the `journal` collection into a 4-stage lifecycle
+  (Watching / Carded / Open / Closed) with a client-side expectancy/adherence panel.
+  Read-only (D1). See [ADR 0004](./docs/adr/0004-trades-tab-and-trade-lifecycle-model.md).
+- **Firestore onSnapshot** drives the conversation list, Monitors, Alerts, and Trades tabs
+  (live whether or not a session is warm).
+- **Settings**: capital-book editor (`settings/capital`), sector→index map editor
+  (`settings/sectorMap`, for regime-gate), and a read-only **Doctrine viewer** grouping
+  Constitution / Skills / Shared protocols / Lessons (published by `seed-skills`).
 - **Config**: `src/firebase.ts` holds the **public** Firebase client config (safe to
   commit). `src/lib/api.ts` — `API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8787'`.
   **`VITE_API_URL` is inlined at build time** → must be set to the HTTPS API domain, else
@@ -845,6 +875,12 @@ rejects unknown origins.
 
 - **Shared dev creds** — `OVERWATCH_DEV_CREDS_FROM_ENV=1` means all users share the
   `.env` creds; true multi-tenant needs the BYOK onboarding UI + flag `0` (§24).
+- **Trades tab / journal** — the CLOSED column reads `users/{uid}/journal`, empty per-user
+  until `append_journal` records a close server-side; the Settings Doctrine viewer's new
+  Constitution/Shared/Lessons groups need a `seed-skills` re-run to populate. The
+  `theses/journal.jsonl` backfill is CLI/repo-only, not seeded to Firestore.
+- **`web_search` deferred** — no search tool; the four skills that reference it degrade to
+  operator-supplied input (ADR 0003).
 - **Netlify custom domain** — `over-watch.in` cert provisioning was pending (TLS mismatch
   at first load); `www` not yet resolving. Finish the Netlify custom-domain step.
 - **Stale-bundle trap** — the "No LLM key found" message is shown on **any** `/models`

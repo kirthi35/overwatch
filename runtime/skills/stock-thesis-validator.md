@@ -9,7 +9,7 @@ description: >
   when the user only says "analyse X" or "what do you think of X" — they want the thesis
   pressure-tested, not a price prediction. Do NOT use for picking a stock from a theme
   (use theme-to-stock-scout) or for live order-book entry timing (use entry-exit-gate).
-compatibility: Groww MCP (read-only), web_search
+compatibility: Groww MCP (read-only) · web_search PENDING (operator supplies the news read until a search tool exists — ADR 0003)
 ---
 
 # Stock Thesis Validator
@@ -65,8 +65,9 @@ State the archetype and the evidence for it. If the user *claimed* an archetype
   Use the full indicator array `[rsi, macd, supertrend, ema, sma, adx, atr, bollinger]` at each
   layer. Then state the **alignment**: does the swing agree with the structure, or is this a
   counter-trend bounce? That single line changes size, stop, and conviction.
-- **Qualitative claims**: `web_search` for anything data can't answer — "is it really the
-  only listed pure-play?", "what drives the cycle?", "recent results/guidance/order book".
+- **Qualitative claims** (web_search PENDING — ADR 0003): ASK THE OPERATOR for anything data
+  can't answer — "is it really the only listed pure-play?", "what drives the cycle?",
+  "recent results/guidance/order book". Never fabricate a news read (Standing Order 8).
 
 ### Step 4 — Score the thesis, claim by claim
 Build a scorecard. For each claim the user made:

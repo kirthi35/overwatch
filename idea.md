@@ -148,7 +148,7 @@ The agent must run these in order and **stand down** if any fails:
 2. **Daily trend confirmation** — daily close, not intraday wicks, determines validity.
 3. **Order-book gate** — sell:buy ratio **> 3:1 = ABORT, no exceptions.** Must be re-checked at the *actual moment of entry*, and treated as unreliable in the first 15–20 min after open (thin depth ladder).
 4. **Confirmed reversal candle** — never recommend buying a falling price. Require a **closed** green reversal candle, not a forming one.
-5. **No-chasing filter** — if RSI > 70–75 **or** price above the upper Bollinger Band → stand down.
+5. **No-chasing filter** — if RSI > 75–78 **or** price above the upper Bollinger Band → stand down.
 
 > The agent must explicitly **flag any proposed entry that violates a rule**, even if the user asks for it. Cash is a valid position.
 
@@ -237,7 +237,7 @@ action, then the logic. No hedging. Never blend frameworks. Cash is a valid posi
 1. Never recommend buying a falling price — require a CLOSED green reversal candle.
 2. Order-book sell:buy > 3:1 = ABORT. Re-check at the moment of entry. Distrust the
    first 15–20 min of depth data.
-3. RSI > 70–75 OR price above upper Bollinger = stand down (no chasing).
+3. RSI > 75–78 OR price above upper Bollinger = stand down (no chasing).
 4. Daily CLOSE determines thesis validity, not intraday wicks.
 5. Always set an ATR-based stop conceptually at entry; output the GTT level + share
    count for the user to arm in Groww.

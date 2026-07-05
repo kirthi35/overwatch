@@ -102,7 +102,7 @@ Identify the major runs and drawdowns: how long past bull legs lasted before a >
 
 ### Step 5 — Confirm the "why" is intact (recovery gate)
 
-A run continues and a crash recovers **only if the underlying driver is still true.** Cross-check the live theme/catalyst (web_search) and note the **break-triggers** that would kill it (e.g. budget cut, order cancellation, execution miss, sector de-rating). If the "why" is intact → dips are froth-unwinds (recoverable). If the "why" broke → treat any drop as a trend-break (do not model recovery).
+A run continues and a crash recovers **only if the underlying driver is still true.** Cross-check the live theme/catalyst and note the **break-triggers** that would kill it (e.g. budget cut, order cancellation, execution miss, sector de-rating). **web_search is not yet wired (ADR 0003) — ask the OPERATOR for the current news read; if it can't be confirmed, state the "why intact?" check is UNVERIFIED rather than fabricate one (Standing Order 8).** If the "why" is intact → dips are froth-unwinds (recoverable). If the "why" broke → treat any drop as a trend-break (do not model recovery).
 
 ---
 
