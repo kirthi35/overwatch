@@ -3,7 +3,7 @@ import type { User } from 'firebase/auth';
 import { AssistantRuntimeProvider, useLocalRuntime, ThreadPrimitive, ComposerPrimitive, MessagePrimitive, ActionBarPrimitive, useMessagePartText, type ThreadMessageLike } from '@assistant-ui/react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Flame, MessageSquare, Radar, Bell, Settings as SettingsIcon, Sun, Moon, Plus, Trash2, LogOut, ArrowUp, Copy, Check, LineChart } from 'lucide-react';
+import { Flame, MessageSquare, Radar, Bell, Settings as SettingsIcon, Sun, Moon, Plus, Trash2, LogOut, ArrowUp, Copy, Check, LineChart, Square } from 'lucide-react';
 import { onAuthChange, signInGoogle, signInEmail, registerEmail, signOutUser, auth } from './firebase';
 import { listModels, createConversation, deleteConversation, type ModelInfo } from './lib/api';
 import { makeChatAdapter } from './lib/runtime';
@@ -226,7 +226,7 @@ function ChatRuntime({ cid, initialMessages }: { cid: string; initialMessages: T
     <AssistantRuntimeProvider runtime={runtime}>
       <ThreadPrimitive.Root className="flex h-full flex-col">
         <ThreadPrimitive.Viewport className="flex-1 overflow-y-auto px-4 py-6">
-          <div className="mx-auto max-w-3xl space-y-5">
+          <div className="mx-auto w-full max-w-none space-y-5">
             <ThreadPrimitive.Empty>
               <div className="mt-24 text-center">
                 <span className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-[var(--accent-soft)] text-accent"><Flame size={22} /></span>
@@ -234,17 +234,39 @@ function ChatRuntime({ cid, initialMessages }: { cid: string; initialMessages: T
               </div>
             </ThreadPrimitive.Empty>
             <ThreadPrimitive.Messages components={{ UserMessage, AssistantMessage }} />
+            <RunningIndicator />
           </div>
         </ThreadPrimitive.Viewport>
         <div className="px-4 pb-4">
-          <ComposerPrimitive.Root className="mx-auto flex max-w-3xl items-end gap-2 rounded-2xl border border-border bg-surface px-3 py-2 shadow-sm focus-within:border-accent">
+          <ComposerPrimitive.Root className="mx-auto flex w-full max-w-none items-end gap-2 rounded-2xl border border-border bg-surface px-3 py-2 shadow-sm focus-within:border-accent">
             <ComposerPrimitive.Input rows={1} autoFocus placeholder="Message Overwatch…" className="flex-1 resize-none bg-transparent py-1.5 text-sm outline-none placeholder:text-muted" />
-            <ComposerPrimitive.Send className="flex h-8 w-8 items-center justify-center rounded-xl bg-accent text-accent-fg hover:opacity-90"><ArrowUp size={16} /></ComposerPrimitive.Send>
+            <ThreadPrimitive.If running={false}>
+              <ComposerPrimitive.Send className="flex h-8 w-8 items-center justify-center rounded-xl bg-accent text-accent-fg hover:opacity-90" title="Send"><ArrowUp size={16} /></ComposerPrimitive.Send>
+            </ThreadPrimitive.If>
+            <ThreadPrimitive.If running>
+              <ComposerPrimitive.Cancel className="flex h-8 w-8 items-center justify-center rounded-xl bg-surface-2 text-fg hover:bg-border" title="Stop"><Square size={14} /></ComposerPrimitive.Cancel>
+            </ThreadPrimitive.If>
           </ComposerPrimitive.Root>
-          <p className="mx-auto mt-2 max-w-3xl text-center text-[10px] text-muted">Overwatch is a scout &amp; analyst — it never places orders. Not financial advice.</p>
+          <p className="mx-auto mt-2 w-full max-w-none text-center text-[10px] text-muted">Overwatch is a scout &amp; analyst — it never places orders. Not financial advice.</p>
         </div>
       </ThreadPrimitive.Root>
     </AssistantRuntimeProvider>
+  );
+}
+
+function RunningIndicator() {
+  // "thinking…" while a turn is in flight (before/while the assistant streams).
+  return (
+    <ThreadPrimitive.If running>
+      <div className="flex items-center gap-2 pl-10 text-xs text-muted">
+        <span className="flex gap-1 text-muted">
+          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-current [animation-delay:-0.3s]" />
+          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-current [animation-delay:-0.15s]" />
+          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-current" />
+        </span>
+        thinking…
+      </div>
+    </ThreadPrimitive.If>
   );
 }
 
