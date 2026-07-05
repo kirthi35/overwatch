@@ -17,6 +17,16 @@ const STATUS_STYLE: Record<TradeStatus, string> = {
   ABANDONED: 'bg-zinc-500/15 text-zinc-500',
 };
 
+// User-facing labels — internal status stays CARDED (the pre-trade-commit domain term),
+// but "Planned" reads clearly: the plan is set, the trade isn't entered yet.
+const STATUS_LABEL: Record<TradeStatus, string> = {
+  OPEN: 'Open',
+  CARDED: 'Planned',
+  WATCHING: 'Watching',
+  CLOSED: 'Closed',
+  ABANDONED: 'Abandoned',
+};
+
 function num(v: unknown): string {
   return typeof v === 'number' && Number.isFinite(v) ? v.toLocaleString('en-IN') : '—';
 }
@@ -52,7 +62,7 @@ function AuditCard({ t, monitors, alerts }: { t: Trade; monitors: MonitorRow[]; 
     <div className="rounded-xl border border-border bg-surface p-3">
       <div className="flex items-center gap-2">
         <span className="font-semibold">{t.symbol ?? t.tradeId}</span>
-        <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${STATUS_STYLE[st]}`}>{st}</span>
+        <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${STATUS_STYLE[st]}`}>{STATUS_LABEL[st]}</span>
         {st === 'CLOSED' && typeof c?.realized_R === 'number' && (
           <span className={`ml-auto text-sm font-semibold ${c.realized_R >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>{r2(c.realized_R)}</span>
         )}
@@ -117,13 +127,14 @@ function AuditCard({ t, monitors, alerts }: { t: Trade; monitors: MonitorRow[]; 
   );
 }
 
-function Column({ title, items, monitors, alerts }: { title: string; items: Trade[]; monitors: MonitorRow[]; alerts: AlertRow[] }) {
+function Column({ title, hint, items, monitors, alerts }: { title: string; hint: string; items: Trade[]; monitors: MonitorRow[]; alerts: AlertRow[] }) {
   return (
     <section className="flex flex-col gap-2">
       <h3 className="flex items-center gap-2 text-xs font-semibold">
         {title}
         <span className="rounded-full bg-surface-2 px-1.5 text-[10px] text-muted">{items.length}</span>
       </h3>
+      <p className="-mt-1 text-[10px] text-muted">{hint}</p>
       {items.length === 0 ? <p className="text-xs text-muted">—</p> : items.map((t) => <AuditCard key={t.id} t={t} monitors={monitors} alerts={alerts} />)}
     </section>
   );
@@ -159,10 +170,10 @@ export function TradesTab({ uid }: { uid: string }) {
       </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <Column title="Open" items={open} monitors={monitors} alerts={alerts} />
-        <Column title="Carded" items={carded} monitors={monitors} alerts={alerts} />
-        <Column title="Watching" items={watching} monitors={monitors} alerts={alerts} />
-        <Column title="Closed" items={closed} monitors={monitors} alerts={alerts} />
+        <Column title="Open" hint="in the position" items={open} monitors={monitors} alerts={alerts} />
+        <Column title="Planned" hint="plan set · not entered yet" items={carded} monitors={monitors} alerts={alerts} />
+        <Column title="Watching" hint="analysing · no plan yet" items={watching} monitors={monitors} alerts={alerts} />
+        <Column title="Closed" hint="exited · with verdict" items={closed} monitors={monitors} alerts={alerts} />
       </div>
 
       {trades.length === 0 && (
