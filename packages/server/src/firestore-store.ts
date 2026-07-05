@@ -1,5 +1,5 @@
 import type { Firestore } from 'firebase-admin/firestore';
-import { sanitizeName, type OverwatchStore, type Monitor, type Alert } from '@overwatch/core';
+import { sanitizeName, type OverwatchStore, type Monitor, type Alert, type JournalRecord } from '@overwatch/core';
 
 // FirestoreStore — the uid-scoped OverwatchStore used by the server + worker.
 // Every path lives under users/{uid}/**, so isolation is enforced both by
@@ -51,5 +51,12 @@ export class FirestoreStore implements OverwatchStore {
   async getThesis(id: string): Promise<unknown | null> {
     const snap = await this.thesisDoc(id).get();
     return snap.exists ? snap.data() : null;
+  }
+
+  async appendJournal(record: JournalRecord): Promise<void> {
+    // Append-only closed-trade log under users/{uid}/journal (owner-only per rules).
+    await this.db
+      .collection(`users/${this.uid}/journal`)
+      .add({ ts: new Date().toISOString(), ...record } as Record<string, unknown>);
   }
 }

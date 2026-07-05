@@ -42,9 +42,9 @@ Call `arm_monitor` with these params (the tool writes+validates the JSON file �
 don't hand-write it):
 ```json
 {
-  "name": "paras-scenario-a",
-  "symbol": "PARAS",
-  "search_query": "Paras Defence",
+  "name": "acme-entry",
+  "symbol": "ACME",
+  "search_query": "Acme Industries",
   "segment": "CASH",
   "poll_minutes": 1,
   "time_gate_ist": 935,
@@ -68,7 +68,7 @@ required; `require_green_candle` needs `candle_interval`). Gate logic
 
 SINGLE-TRUTH RULE: theses/<symbol>.json is the only authoritative record of a symbol's stop, targets, entry, and thesis. Every monitor gate value must be read from (or written to) that file at arm time. Two monitors on one symbol with different stops is a defect: on arming, if an existing monitor for the symbol carries a different stop, HALT and ask the operator which is canonical before proceeding.
 
-NO INSTANT-FIRE ZONES: an entry-zone monitor may only be armed for a zone the price is NOT currently inside. If price is already in the proposed zone, arming a monitor is forbidden — the decision routes to entry-exit-gate NOW. A monitor engineered to fire immediately is a buy-now rubber stamp, not a patience tool (verified violation: 2026-07-03 RUBICON 'aggressive' zone ₹1,340–1,375 armed with LTP ₹1,371; fired in minutes; position −4.9% same day).
+NO INSTANT-FIRE ZONES: an entry-zone monitor may only be armed for a zone the price is NOT currently inside. If price is already in the proposed zone, arming a monitor is forbidden — the decision routes to entry-exit-gate NOW. A monitor engineered to fire immediately is a buy-now rubber stamp, not a patience tool (evidence: L-2026-07-03).
 
 ## Walk-away (CLI closed)
 Automatic — the daemon survives the CLI. To actually SEE a fire while away,

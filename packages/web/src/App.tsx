@@ -3,7 +3,7 @@ import type { User } from 'firebase/auth';
 import { AssistantRuntimeProvider, useLocalRuntime, ThreadPrimitive, ComposerPrimitive, MessagePrimitive, ActionBarPrimitive, useMessagePartText, type ThreadMessageLike } from '@assistant-ui/react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Flame, MessageSquare, Radar, Bell, Settings as SettingsIcon, Sun, Moon, Plus, Trash2, LogOut, ArrowUp, Copy, Check } from 'lucide-react';
+import { Flame, MessageSquare, Radar, Bell, Settings as SettingsIcon, Sun, Moon, Plus, Trash2, LogOut, ArrowUp, Copy, Check, LineChart } from 'lucide-react';
 import { onAuthChange, signInGoogle, signInEmail, registerEmail, signOutUser, auth } from './firebase';
 import { listModels, createConversation, deleteConversation, type ModelInfo } from './lib/api';
 import { makeChatAdapter } from './lib/runtime';
@@ -12,6 +12,7 @@ import { useTheme } from './lib/theme';
 import { MonitorsTab } from './tabs/MonitorsTab';
 import { AlertsTab } from './tabs/AlertsTab';
 import { SettingsTab } from './tabs/SettingsTab';
+import { TradesTab } from './tabs/TradesTab';
 
 export function App() {
   const [user, setUser] = useState<User | null | undefined>(undefined);
@@ -69,9 +70,10 @@ function AuthGate() {
   );
 }
 
-type Tab = 'chat' | 'monitors' | 'alerts' | 'settings';
+type Tab = 'chat' | 'trades' | 'monitors' | 'alerts' | 'settings';
 const NAV: { id: Tab; label: string; icon: React.ReactNode }[] = [
   { id: 'chat', label: 'Chat', icon: <MessageSquare size={17} /> },
+  { id: 'trades', label: 'Trades', icon: <LineChart size={17} /> },
   { id: 'monitors', label: 'Monitors', icon: <Radar size={17} /> },
   { id: 'alerts', label: 'Alerts', icon: <Bell size={17} /> },
   { id: 'settings', label: 'Settings', icon: <SettingsIcon size={17} /> },
@@ -130,6 +132,7 @@ function MainApp() {
         {onboarded === null && <Centered>Checking configuration…</Centered>}
         {onboarded === false && <Centered>No LLM key found. Set ANTHROPIC_API_KEY or OLLAMA_API_KEY in .env and restart the server.</Centered>}
         {onboarded && tab === 'chat' && <ChatArea uid={uid} />}
+        {onboarded && tab === 'trades' && <TradesTab uid={uid} />}
         {onboarded && tab === 'monitors' && <MonitorsTab uid={uid} />}
         {onboarded && tab === 'alerts' && <AlertsTab uid={uid} />}
         {onboarded && tab === 'settings' && <SettingsTab uid={uid} />}

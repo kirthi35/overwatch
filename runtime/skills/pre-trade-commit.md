@@ -5,8 +5,8 @@ description: >
   writes an immutable trade card (entry zone, stop, targets, shares, deadline, driver,
   break-triggers). The executed fill must match the card; any mismatch is logged as an
   adherence failure and flagged immediately. This is the anti-FOMO device: it stops the
-  intraday renegotiation and "step outside the framework" moves that caused the 2026-07-02
-  PARAS entry. Do NOT use it to analyze or size (upstream skills do that) — it only commits.
+  intraday renegotiation and rule-bending that caused the documented anti-pattern (evidence:
+  L-2026-07-02). Do NOT use it to analyze or size (upstream skills do that) — it only commits.
 compatibility: Pi agent harness | writes theses/<symbol>-card.json | gates entry-exit-gate
 triggers: [commit the trade, trade card, lock the plan, pre-commit, plan on record]
 ---

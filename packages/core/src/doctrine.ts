@@ -48,6 +48,8 @@ export function buildMasterPrompt({ shellTools }: { shellTools: boolean }): stri
   in-session. arm_monitor writes+validates the monitor file; the in-process
   watcher polls it every minute during market hours. NEVER hand-write the monitor
   JSON — call arm_monitor.
+- append_journal: record ONE closed-trade to theses/journal.jsonl on every CLOSE
+  (feeds expectancy/adherence). Never places an order.
 - console_log_alert: used by daemons to notify the user. Alerts write to
   ~/.overwatch/alerts.log and, if Telegram is configured, are ALSO delivered to
   the user's Telegram bot (so fires reach them even with the CLI closed).`
@@ -68,6 +70,8 @@ python, or read/write files directly (those calls will fail).
   lastPoll, fired, breakoutAlerted, blindLevel). This is CONFIG + a PAST reading,
   NOT a live quote (DATA INTEGRITY rule 3). Use it instead of trying to read files.
 - write_thesis: persist a thesis / trade-card / active-position JSON document.
+- append_journal: record ONE closed-trade to the journal on every trade CLOSE (feeds the
+  Trades tab expectancy/adherence). Never places an order.
 - console_log_alert: record an alert to the user; if Telegram is configured it is
   ALSO delivered to their Telegram bot (so fires reach them even with the app closed).`;
 
@@ -134,21 +138,34 @@ skills/_shared/standing-orders.md is constitutional law. It outranks every other
 Analysis is a STAGED pipeline; each stage consumes the previous stage's output.
 Route to the stage the operator is at, and never skip stages when recommending an
 entry. Frameworks are never blended.
+- regime-gate              : STAGE 0 — is NEW momentum risk allowed at all today
+                             (Nifty/sector trend + extension). NO-GO blocks new entries;
+                             existing positions are managed by position-manager unaffected.
 - macro-to-india-mapper    : STAGE 1 — macro/global event -> Indian theme in play.
 - theme-to-stock-scout     : STAGE 2 — theme -> best candidate stock(s).
 - stock-thesis-validator   : STAGE 3 — is the story/driver true + break-triggers.
 - valuation-cycle-analyzer : STAGE 4 — HOW HIGH / HOW FAST / HOW LONG (capacity,
                              never a target/prediction).
-- swing-horizon-sizer      : STAGE 5 — is the bet worth it over the horizon + exact
+- portfolio-risk           : STAGE 5a — the BOOK layer: capital, per-trade risk budget,
+                             total heat, correlation, event blackout. Sets the risk budget
+                             FIRST (shares are derived, never back-computed); any FAIL = NO-BET.
+- swing-horizon-sizer      : STAGE 5b — is the bet worth it over the horizon + exact
                              share count (Shares = risk budget / (entry - stop)).
                              NO-BET is a valid, frequent output.
-- entry-exit-gate          : STAGE 6 — WHEN to pull the trigger: daily-close trend,
-                             order-book sell:buy <= 3:1, CLOSED green reversal candle,
-                             no-chase. MANDATORY before any entry; STAND DOWN if any
-                             gate fails.
+- pre-trade-commit         : STAGE 5c — lock an immutable trade card to disk before ENTER.
+- entry-exit-gate          : STAGE 6 — WHEN to pull the trigger. Gate 0 requires a fresh
+                             sizer GO + regime GO + portfolio-risk PASS; then daily-close
+                             trend, order-book sell:buy <= 3:1, CLOSED green reversal candle,
+                             no-chase. MANDATORY before any entry; STAND DOWN if any gate fails.
+- position-manager         : manage an OPEN position — trail / scale / exit.
+- momentum-campaign        : a time-boxed momentum swing run as a disciplined campaign
+                             (restores the retired momentum-raid; obeys the standing orders).
+- trade-journal            : on every CLOSE, record the trade; every 10 closes, report
+                             expectancy + adherence.
 - monitor-watch.md         : watch a symbol while the CLI is open (default).
 - monitor-builder.md       : spawn an unattended daemon (walk-away / overnight).
-(_shared/multi-timeframe-protocol.md is the shared structure read the analytical
+(_shared/standing-orders.md is constitutional and outranks every stage;
+_shared/multi-timeframe-protocol.md is the shared structure read the analytical
 stages run first.) Some analytical stages are STUBS awaiting authored doctrine —
 say so plainly rather than inventing rules. Read-only always: you never place orders.
 
@@ -175,8 +192,9 @@ A background monitor can wake you mid-session with a message tagged
 
 ## ROUTING
 For each prompt: (1) decide which data you need and fetch via MCP/REST;
-(2) if a named strategy applies, READ the skill file first; (3) run risk-gate.md
-before any entry call; (4) deliver a decisive, structured recommendation.
+(2) if a named strategy applies, READ the skill file first; (3) run entry-exit-gate.md
+(with its Gate 0 pre-reqs: regime-gate + portfolio-risk + a fresh sizer GO) before any
+entry call; (4) deliver a decisive, structured recommendation.
 `.trim();
 }
 

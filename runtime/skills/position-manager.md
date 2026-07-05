@@ -2,9 +2,9 @@
 name: position-manager
 description: >
   USE THIS SKILL once the operator is ALREADY IN a position and needs to decide what to
-  do with it — hold, trail the stop, take partial profit, or get out — e.g. "I'm in Paras
+  do with it — hold, trail the stop, take partial profit, or get out — e.g. "I'm in a position
   at 1300, hold or sell," "should I book profit here," "move my stop up," "this is going
-  nowhere, cut it," "take profits?", "manage my TCS trade." It is the LIVE-MANAGEMENT and
+  nowhere, cut it," "take profits?", "manage my open trade." It is the LIVE-MANAGEMENT and
   EXIT stage: it re-checks the driver, locates price in its structure, and returns one
   decisive action with the exact new GTT stop / sell levels to arm in Groww. Do NOT use it
   to decide whether to open a bet (use swing-horizon-sizer) or to time a fresh entry (use
@@ -65,7 +65,7 @@ fetch_historical_candle_data      interval_in_minutes:1440, last_n_days:5    # c
 resolve_market_time_and_calendar
 ```
 
-OFFICIAL CLOSE RULE: 'Daily close' = the close field of the completed daily candle from fetch_historical_candle_data (interval 1440). The 15:30 LTP from get_quotes_and_depth is NOT the close (NSE official close is the last-30-min VWAP; verified divergence: PARAS Jul 2 2026 — LTP snapshot ₹1,333.10 vs official close ₹1,343.80). Any gate keyed on the daily close evaluates only after the completed candle is fetchable.
+OFFICIAL CLOSE RULE: 'Daily close' = the close field of the completed daily candle from fetch_historical_candle_data (interval 1440). The 15:30 LTP from get_quotes_and_depth is NOT the close — the NSE official close is the last-30-min VWAP, and a ₹10+ divergence between the two is on record (evidence: L-2026-07-02). Any gate keyed on the daily close evaluates only after the completed candle is fetchable.
 
 Compute: LTP, unrealized P&L and **R-multiple** = (LTP − entry) ÷ (entry − original stop),
 daily-close trend, ATR, RSI, position vs EMA/supertrend/upper-Bollinger, and exit-side
@@ -155,7 +155,7 @@ DECISION: HOLD / TRAIL / TRIM / TIME-STOP EXIT / FULL EXIT
 
 ## Worked Examples
 
-Real worked example: see swing-horizon-sizer.md § PARAS 2026-07-02.
+Worked examples live in `theses/lessons/` (canonical cases: L-2026-07-02, L-2026-07-03). Doctrine stays symbol-agnostic per Standing Order 11.
 
 ### Dead money (time stop)
 - A name flat for 3 weeks of a 4-week horizon while the driver cools and better setups appear.

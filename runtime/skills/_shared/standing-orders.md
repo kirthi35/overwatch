@@ -53,3 +53,9 @@ contemplated trade in any symbol under discussion.
 10. EVENT BLACKOUT. No new momentum position may be opened if the company has scheduled
     results/board-meeting inside the intended holding window. A gap through a stop is
     not a stop.
+
+11. DOCTRINE PURITY. Doctrine and skill files state timeless, symbol-agnostic rules —
+    no stock names, no trade dates, no incident narration inside a rule. Evidence lives
+    in `theses/lessons/L-<date>-<slug>.md` case files; doctrine cites a lesson ID only
+    (e.g., "evidence: L-2026-07-02"). Worked examples with real symbols live in the
+    lesson library, never in the skill body.

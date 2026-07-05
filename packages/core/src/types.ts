@@ -60,6 +60,33 @@ export interface Alert {
   terminal?: boolean;
 }
 
+/** One closed-trade record — the feedback loop the trade-journal skill appends on every
+ *  CLOSE. Fields mirror the skill's schema; most are optional so backfilled/partial rows
+ *  (e.g. an OPEN position awaiting its close) are representable. `realized_R` is null until
+ *  the trade actually closes — expectancy math MUST skip null-R rows. */
+export interface JournalRecord {
+  symbol: string;
+  entry_date?: string | null;
+  exit_date?: string | null;
+  entry?: number | null;
+  stop_initial?: number | null;
+  stop_final?: number | null;
+  exit_price?: number | null;
+  shares?: number | null;
+  planned_R?: number | null;
+  realized_R?: number | null;
+  hold_days?: number | null;
+  mode?: string | null;
+  regime_state_at_entry?: string | null;
+  gates_passed?: string[];
+  gates_overridden?: string[];
+  adherence_score?: number | null;
+  one_line_lesson?: string;
+  status?: 'OPEN' | 'CLOSED';
+  /** ISO timestamp the record was written — used to order the CLOSED view. */
+  ts?: string;
+}
+
 export interface TelegramConfig {
   botToken: string;
   chatId: string;
@@ -108,4 +135,8 @@ export interface OverwatchStore {
   appendAlert(alert: Alert): Promise<void>;
   putThesis(id: string, doc: unknown): Promise<void>;
   getThesis(id: string): Promise<unknown | null>;
+  /** Append one closed-trade record. FileStore appends a line to theses/journal.jsonl;
+   *  FirestoreStore adds a doc under users/{uid}/journal. The Trades tab reads these as
+   *  the CLOSED lifecycle stage + the expectancy/adherence feed. */
+  appendJournal(record: JournalRecord): Promise<void>;
 }

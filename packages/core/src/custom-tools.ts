@@ -1,7 +1,7 @@
 import { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { Type } from '@sinclair/typebox';
 import { notifyTelegram } from './telegram.js';
-import { UserContext, Monitor, AlertSeverity } from './types.js';
+import { UserContext, Monitor, AlertSeverity, JournalRecord } from './types.js';
 
 // Custom (non-Groww) tools, parameterized by UserContext so each agent session
 // writes to that user's own store (FileStore for the CLI, FirestoreStore for the
@@ -225,6 +225,42 @@ export function registerCustomTools(api: ExtensionAPI, u: UserContext) {
         return { content: [{ type: 'text', text: `Wrote thesis '${args.id}'.` }], details: { written: true, id: args.id } };
       } catch (e: any) {
         return { content: [{ type: 'text', text: `write_thesis: failed — ${e.message}` }], details: { written: false, id: undefined as string | undefined } };
+      }
+    },
+  });
+
+  // append_journal — record ONE closed-trade to the journal (trade-journal skill).
+  // Append-only: FileStore -> theses/journal.jsonl, FirestoreStore -> users/{uid}/journal.
+  // This is the CLOSED lifecycle stage + the expectancy/adherence feed the Trades tab reads.
+  api.registerTool({
+    name: 'append_journal',
+    label: 'Append Journal',
+    description:
+      'Record ONE closed-trade to the journal on every trade CLOSE (stop, target, time-stop, ' +
+      'or manual exit). `record` fields: symbol (required), entry_date, exit_date, entry, ' +
+      'stop_initial, stop_final, exit_price, shares, planned_R, realized_R, hold_days, mode ' +
+      '(DIP|BREAKOUT), regime_state_at_entry, gates_passed[], gates_overridden[] (MUST be empty ' +
+      'per standing orders), adherence_score, one_line_lesson, status (OPEN|CLOSED). Never places an order.',
+    parameters: Type.Object({
+      record: Type.Any({ description: 'The closed-trade journal record object (symbol required).' }),
+    }),
+    execute: async (_toolCallId, args: any) => {
+      try {
+        let rec: unknown = args.record;
+        if (typeof rec === 'string') {
+          try { rec = JSON.parse(rec); } catch { /* handled below */ }
+        }
+        if (rec === null || typeof rec !== 'object' || Array.isArray(rec)) {
+          return { content: [{ type: 'text', text: 'append_journal: failed — record must be an object.' }], details: { written: false, symbol: undefined as string | undefined } };
+        }
+        const symbol = (rec as Record<string, unknown>).symbol;
+        if (typeof symbol !== 'string' || !symbol.trim()) {
+          return { content: [{ type: 'text', text: 'append_journal: failed — record.symbol is required.' }], details: { written: false, symbol: undefined as string | undefined } };
+        }
+        await u.store.appendJournal(rec as JournalRecord);
+        return { content: [{ type: 'text', text: `Recorded journal entry for '${symbol}'.` }], details: { written: true, symbol: symbol as string | undefined } };
+      } catch (e: any) {
+        return { content: [{ type: 'text', text: `append_journal: failed — ${e.message}` }], details: { written: false, symbol: undefined as string | undefined } };
       }
     },
   });

@@ -16,8 +16,10 @@ triggers: [journal, log the trade, trade closed, expectancy, win rate, adherence
 line. Every 10 closes, you report whether the system is actually making money and whether it
 is following its own rules. A trade the journal never sees is a lesson lost.
 
-## On every CLOSE — append one record to `theses/journal.jsonl`
-One JSON object per line, fields:
+## On every CLOSE — record one journal entry via the `append_journal` tool
+Call `append_journal` with a `record` object (do NOT hand-write the file). The tool is
+environment-agnostic: on the CLI it appends to `theses/journal.jsonl`; on the multi-tenant
+server it writes `users/{uid}/journal` (no shell needed). Fields:
 ```
 symbol, entry_date, exit_date, entry, stop_initial, stop_final, exit_price, shares,
 planned_R (from the pre-trade card), realized_R, hold_days, mode (DIP|BREAKOUT),
@@ -34,11 +36,11 @@ is an adherence failure and must be surfaced to the operator, not buried.
 - Doctrine amendments (post-close ratification per Standing Order 1) cite this data — not
   vibes.
 
-## Backfill NOW (from the audited record)
-- **ETERNAL** — 40 @ ₹264.60 → exit ~₹282 (+6.6%), realized ≈ +1.0R equivalent, adherence
-  HIGH. Write the close record.
-- **PARAS** — 10 @ ₹1,322.47, stop ₹1,278 — register as OPEN, awaiting close record.
-- **RUBICON** — 5 @ ₹1,375, stop ₹1,275 — register as OPEN, awaiting close record.
+## Backfill (already written to `theses/journal.jsonl`)
+The audited Jul 1–3 trades are backfilled: one CLOSED record (a +6.6%, ~+1.0R,
+HIGH-adherence exit) plus two OPEN positions awaiting close records. The graded case detail
+lives in `theses/lessons/` (evidence: L-2026-07-02, L-2026-07-03). Doctrine stays
+symbol-agnostic per Standing Order 11.
 
 ## Pipeline Position
 Runs at the END of the lifecycle: `position-manager` closes the trade → **`trade-journal`**

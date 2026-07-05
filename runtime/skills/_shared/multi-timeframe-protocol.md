@@ -31,7 +31,7 @@ Always read **structure → setup → timing**, in that order. Context before th
   `[rsi, macd, supertrend, ema, sma, adx, atr, bollinger]`. Use `detail: series` where you need the
   *shape* (slopes, where a base formed), `detail: latest` where you only need the current reading.
 
-WARM-UP RULE (mandatory): MACD, ADX, RSI, ATR and all derived values must be computed over ≥ 6 months of daily candles (≥ 120 trading candles) regardless of the display window. Short-lookback pulls produce garbage (verified: a 3-week pull returned ADX 2.8 and MACD starting at 0.0 for PARAS; the same day produced four mutually contradictory MACD histogram readings across sessions: −4.33, −0.71, +0.31, −2.62; the correct 3-month-basis value was −5.18). If you need a 1W/1M view, fetch ≥6M and display the tail.
+WARM-UP RULE (mandatory): MACD, ADX, RSI, ATR and all derived values must be computed over ≥ 6 months of daily candles (≥ 120 trading candles) regardless of the display window. Short-lookback pulls produce garbage — a 3-week pull returns near-zero ADX and un-warmed MACD, and short windows have produced four mutually contradictory MACD readings for one stock in one day (evidence: L-2026-07-02). If you need a 1W/1M view, fetch ≥6M and display the tail.
 
 ## The alignment rule (the payoff)
 The highest-probability swing is when the **swing trend (daily) agrees with the structure

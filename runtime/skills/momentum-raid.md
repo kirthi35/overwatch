@@ -10,7 +10,7 @@ superseded_by: momentum-campaign
 # Momentum Raid — RETIRED (redirect → momentum-campaign)
 
 This flat "momentum raid" framework is retired and MUST NOT be invoked ad-hoc
-(Standing Order 2 — "step outside the framework" is forbidden). A disciplined,
+(Standing Order 2 — ad-hoc rule-bending is forbidden). A disciplined,
 time-boxed momentum swing now lives in **`momentum-campaign.md`**, which wraps the
 full pipeline with a structural stop, book sizing, a hard calendar exit, a
 sell-into-strength ladder, and a re-entry protocol. Short-term entry-timing signals

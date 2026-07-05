@@ -4,7 +4,7 @@ description: >
   USE THIS SKILL when the operator is deciding whether a SPECIFIC swing bet is
   worth taking over a SPECIFIC horizon and how large it should be — e.g. "if I
   swing this for a month, can it do 5–10%," "is this bet worth it," "how many
-  shares," "should I take Paras for the next month," "given my risk budget, size
+  shares," "should I take this for the next month," "given my risk budget, size
   it." It converts the capacity read into a go/no-go decision by estimating the
   realistic expected move over the operator's horizon, comparing reward to the
   technical stop distance, and returning an exact share count. Do NOT use this to
@@ -27,7 +27,7 @@ compatibility: Groww MCP (read-only) | Pi agent harness | consumes valuation-cyc
 - **Expected move is horizon-bound.** Upside capacity ("could reach ₹3,000 someday") is useless for a 1-month swing. What matters is the *realistic move over the operator's actual window*, driven by recent velocity, cycle position, and the distance to the next resistance.
 - **The bet must clear a threshold.** A swing is only worth the risk if the realistic reward-to-stop ratio is favourable (target ≥ ~2:1) AND the expected move is large enough to matter after costs. If a mega-cap can only do 2% in a month, it is not a swing — it is a hold.
 - **Position size comes from risk, never from conviction.** Shares = risk budget ÷ (entry − stop). Conviction adjusts the risk budget *within preset bounds*, it never overrides the stop math.
-- **Survive being wrong.** Size so that the *stop loss* is a small fraction of capital and so a worst-case gap does not maim the account. Yesterday's Paras bet went against us and it was *fine* — because it was sized so the loss was trivial. That is the whole point.
+- **Survive being wrong.** Size so that the *stop loss* is a small fraction of capital and so a worst-case gap does not maim the account. A recent bet went against us and it was *fine* — because it was sized so the loss was trivial (evidence: L-2026-07-02). That is the whole point.
 
 ---
 
@@ -91,8 +91,8 @@ IF GO:
 - **NEVER predict the actual move** — give a *range with stated drivers*, and label the base case as an expectation, not a promise.
 - **NO-BET is a valid, frequent output.** Slow names over short horizons, extended names into resistance, and broken-driver names should be rejected. Refusing a bad bet is the edge.
 - **Stop math is inviolable.** Shares always derive from risk ÷ stop distance. Never size up because conviction is high; raise the risk budget only within preset bounds.
-- **STOP FLOOR:** minimum stop distance = 1.5×ATR(14) daily unless a structural level sits closer. If the ≥1.5×ATR structural stop breaks the 2:1 threshold, the trade is a NO-BET. A stop is NEVER tightened to manufacture a passing R:R (verified violation: 2026-07-02 PARAS, ₹1,278 stop = 0.5×ATR on a ₹89-ATR stock, chosen to convert a failing 0.84–1.31:1 into a claimed 2.75:1; price hit ₹1,285 the next session).
-- **SIZING DIRECTION:** capital and risk % come first from portfolio-risk; shares are derived. Never accept a share count from the operator and back-compute the risk (verified violation: 2026-07-03 RUBICON, 'i want to buy 5').
+- **STOP FLOOR:** minimum stop distance = 1.5×ATR(14) daily unless a structural level sits closer. If the ≥1.5×ATR structural stop breaks the 2:1 threshold, the trade is a NO-BET. A stop is NEVER tightened to manufacture a passing R:R — a 0.5×ATR stop is a random-exit generator, and this exact failure is on record (evidence: L-2026-07-02).
+- **SIZING DIRECTION:** capital and risk % come first from portfolio-risk; shares are derived. Never accept a share count from the operator and back-compute the risk (evidence: L-2026-07-03).
 - **No chasing:** if RSI ≥ 75–78 or price is extended far above the entry reference, downgrade to WATCH regardless of capacity.
 - **Read-only:** output a plan; the operator executes and arms the GTT stop manually. Close every output with the not-financial-advice line.
 
@@ -100,24 +100,15 @@ IF GO:
 
 ## Worked Examples
 
-### PARAS 2026-07-02 — the REAL trade (a process failure, recorded so it is never repeated)
-- Morning verdict (correct): STAND DOWN — R:R 0.84:1 to T1 / 1.31:1 to T2 on the
-  structural ₹1,200 stop; below the 2:1 floor.
-- What happened: under operator time-pressure, a "momentum approach" was improvised that
-  tightened the stop to ₹1,278 (0.5×ATR) to claim 2.75:1. Entry ₹1,322.47 ×10 at the
-  day's high (RSI ~70, +53% month). The trade sheet itself printed blended R:R 1.98:1 —
-  below the floor — and was waved through.
-- Next session: −3.7% close, low ₹1,285 (₹7 above the stop). The whipsaw the tight stop
-  guaranteed arrived on schedule.
-- What held: risk containment — ₹445 max loss, GTT armed, hard Jul 9 exit. Being wrong
-  was cheap. The sizing math worked; the decision to trade was the failure.
-- Encoded rule: Standing Orders 3, 4, 9 exist because of this trade.
+Worked examples live in `theses/lessons/` (see L-2026-07-02 for the canonical stop-floor
+case). Doctrine stays symbol-agnostic per Standing Order 11 — the de-named archetypes below
+are illustrative, not incident records.
 
-### Eternal — a NO-BET (as a swing)
+### A slow mega-cap — a NO-BET (as a swing)
 - Character: slow mega-cap, ~1–2%/week; multiple maxed. Realistic 1-month move ≈ 2–4%.
-- Expected move too small to clear the reward-vs-risk threshold for a swing. **VERDICT: NO-BET as a swing → route to range/hold management instead** (accumulate weakness, trim ₹285+). Correctly rejected as a swing candidate.
+- Expected move too small to clear the reward-vs-risk threshold for a swing. **VERDICT: NO-BET as a swing → route to range/hold management instead** (accumulate weakness on defined levels). Correctly rejected as a swing candidate.
 
-### The "already up 90%" case (e.g. a name that ran from ₹5,000 → ₹9,000)
+### The "already up 90%" case (a name that ran from ₹5,000 → ₹9,000)
 - Do NOT anchor on the past 90%. Run `valuation-cycle-analyzer` first: is the *multiple* now maxed (headroom spent → expect small forward moves, high pullback risk) or still live (headroom left → fresh leg possible)? Check extension (a name up 90% is often *late-cycle* → haircut the expected move) and room to the prior peak. Then size — or reject. Past gains are not forward capacity; only headroom + velocity + cycle position are.
 
 ---

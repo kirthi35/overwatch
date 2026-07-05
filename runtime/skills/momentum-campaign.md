@@ -3,7 +3,7 @@ name: momentum-campaign
 description: >
   USE THIS SKILL to run a time-boxed momentum swing as a disciplined CAMPAIGN — a real
   restoration of the retired momentum-raid, rebuilt to obey the standing orders. It is NOT an
-  ad-hoc "step outside the framework" mode (that is forbidden, Standing Order 2). It wraps the
+  ad-hoc rule-bending mode (that is forbidden, Standing Order 2). It wraps the
   normal pipeline with campaign discipline: structural stop, book-sized position, a hard
   calendar exit set at entry, a pre-marked sell-into-strength ladder, and a re-entry protocol.
   Do NOT invoke it to justify chasing a stock that failed the gates.

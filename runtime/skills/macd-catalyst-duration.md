@@ -8,7 +8,7 @@
 > **DO NOT USE AS STANDALONE.** MACD alone is noise. This framework only works
 > when combined with a verified fundamental catalyst.
 >
-> **HORIZON MATCH: this framework predicts multi-week run durations. It may only gate trades whose holding window is ≥ the lower bound of the predicted run. It must NOT be used to justify a ≤5-day trade (verified misuse: 2026-07-02).**
+> **HORIZON MATCH: this framework predicts multi-week run durations. It may only gate trades whose holding window is ≥ the lower bound of the predicted run. It must NOT be used to justify a ≤5-day trade (evidence: L-2026-07-02).**
 
 ---
 
@@ -74,9 +74,9 @@ others whipsaw constantly. You MUST calibrate per stock.
 
 MINIMUM SAMPLE: a per-stock MACD personality requires ≥10 zero-line crosses over ≥2 years. Below that, output 'INSUFFICIENT HISTORY — no duration prediction.' Whipsaw P&L math must include costs (brokerage + STT + slippage ≈ 0.3–0.5% round trip); a 0% gross whipsaw is a net loss.
 
-**Rule:** The day counts DON'T generalize between stocks. A large-cap like
-Reliance might have 45-day MACD runs as baseline; a small-cap might max out at
-8 days. Calibrate per stock, then apply the framework.
+**Rule:** The day counts DON'T generalize between stocks. A large-cap might
+have 45-day MACD runs as baseline; a small-cap might max out at 8 days.
+Calibrate per stock, then apply the framework.
 
 ---
 
@@ -167,7 +167,7 @@ OUTPUT: "Expected momentum run: X-Y days" → feeds directly into holding-period
 Automated calibration: `~/.overwatch/tools/macd-calibrator.js`
 
 ```bash
-node ~/.overwatch/tools/macd-calibrator.js "E2E Networks" "Eternal" "BSE"
+node ~/.overwatch/tools/macd-calibrator.js "<Full Company Name>"
 ```
 
 Pulls 3Y daily MACD + ADX + RSI, identifies all histogram crosses, measures

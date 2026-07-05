@@ -4,9 +4,10 @@ description: >
   STAGE 0 — USE THIS SKILL before macro-to-india-mapper and before ANY new entry. It reads
   the market regime (Nifty trend, sector trend, index extension) and returns REGIME GO or
   REGIME NO-GO. NO-GO blocks new momentum entries (existing positions are unaffected —
-  position-manager runs normally). It exists because all four 2026-07-01→03 trades were
-  stretched-momentum bought into a consolidating tape with no regime check. Do NOT use it to
-  pick a stock (theme-to-stock-scout) or judge one (stock-thesis-validator).
+  position-manager runs normally). It exists because a cluster of stretched-momentum trades
+  were bought into a consolidating tape with no regime check (evidence: L-2026-07-01,
+  L-2026-07-02, L-2026-07-03). Do NOT use it to pick a stock (theme-to-stock-scout) or judge
+  one (stock-thesis-validator).
 compatibility: Groww MCP (read-only) | Pi agent harness | Stage 0 of the pipeline
 triggers: [regime, market regime, risk on, risk off, is the market ok, nifty trend, breadth, tape]
 ---

@@ -4,8 +4,8 @@ description: >
   Stress-tests a single named stock against the user's own qualitative thesis and
   returns a structured verdict with exact levels. USE THIS SKILL whenever the user
   names a specific stock and gives any view, hunch, or story about it — e.g. "look at
-  E2E Networks, it's the only listed data-center play and doing well", "is BHEL a buy,
-  defence order book is loading", "check Tata Power, renewables theme". Trigger even
+  this data-center name, it's the only listed pure-play and doing well", "is this defence
+  stock a buy, the order book is loading", "check this power utility, renewables theme". Trigger even
   when the user only says "analyse X" or "what do you think of X" — they want the thesis
   pressure-tested, not a price prediction. Do NOT use for picking a stock from a theme
   (use theme-to-stock-scout) or for live order-book entry timing (use entry-exit-gate).
@@ -27,7 +27,7 @@ priced in, and where the levels are.** Those are answerable. "Will it go up" is 
 
 - `symbol` — the stock named by the user (resolve it; see Step 1)
 - `thesis` — the user's qualitative claims, in their words. Extract every distinct claim.
-  Example claims from "E2E is the only listed data-center play, cyclical, doing well":
+  Example claims from "this is the only listed data-center play, cyclical, doing well":
   (a) only listed pure-play, (b) cyclical business, (c) currently performing well.
 
 ## Workflow
@@ -125,13 +125,13 @@ WHAT WOULD CHANGE THIS CALL: [specific, observable trigger]
    ATR or order-book depth, so stop-sizing and the entry gate cannot be fully satisfied.
 6. End every run with the one observable thing that would flip the call. A thesis you can't
    falsify isn't analysis, it's faith.
-7. VALUATION-REFUTED CAP: if the valuation claim scores REFUTED and the archetype is structural growth with decelerating growth (QoQ revenue growth falling across the last 3 quarters), the verdict caps at WAIT FOR PULLBACK regardless of technicals (verified violation: 2026-07-03 RUBICON — P/E 92 vs industry 35 scored REFUTED, QoQ growth 17%→16%→8%, bought the same morning at 0.94:1 R:R).
+7. VALUATION-REFUTED CAP: if the valuation claim scores REFUTED and the archetype is structural growth with decelerating growth (QoQ revenue growth falling across the last 3 quarters), the verdict caps at WAIT FOR PULLBACK regardless of technicals (evidence: L-2026-07-03).
 
 ---
 
-### Worked illustration — "E2E Networks, only listed data-center play, cyclical, doing well"
+### Worked illustration — "the only listed data-center play, cyclical, doing well"
 - **Archetype check**: Is it truly *cyclical*, or *structural growth*? Data-center demand
-  in India (AI/cloud capex) reads more structural than cyclical — so claim (b) gets
+  (AI/cloud capex) reads more structural than cyclical — so claim (b) gets
   challenged, and that *changes the buy framework* (you pay up for growth, you don't wait
   for a trough). This single correction is the most valuable output.
 - **Claim (a) "only listed pure-play"**: web-verify against comparables — scarcity premium

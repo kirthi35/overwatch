@@ -40,8 +40,8 @@ threshold changes made mid-trade).
 
 3. **CORRELATION CAP.** Maximum **1 open position per theme/sector** (e.g. defence small-caps)
    unless the operator explicitly declares them one combined campaign — in which case their
-   COMBINED risk counts as one slot and must fit inside one per-trade budget. (Verified
-   exposure: PARAS held + APOLLO buy-monitor armed = same defence-smallcap factor, 2026-07-03.)
+   COMBINED risk counts as one slot and must fit inside one per-trade budget. (Evidence of the
+   unchecked stacked-factor exposure this prevents: L-2026-07-03.)
 
 4. **EVENT CHECK (Standing Order 10).** Before any GO, confirm no scheduled results / board
    meeting inside the intended hold window. A gap through a stop is not a stop. If an event

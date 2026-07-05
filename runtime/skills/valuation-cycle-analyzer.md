@@ -3,8 +3,8 @@ name: valuation-cycle-analyzer
 description: >
   USE THIS SKILL when the operator asks how much upside a stock has, how far it
   can run, whether it is "cheap" or "expensive," how long a bull run might last,
-  or how fast it moves — e.g. "how high can Paras go," "is Eternal maxed out,"
-  "Craftsman is up 90%, how much more," "what's the ceiling," "how long will this
+  or how fast it moves — e.g. "how high can this stock go," "is this mega-cap maxed
+  out," "it's up 90%, how much more," "what's the ceiling," "how long will this
   run." It answers three questions for one named stock: HOW HIGH (valuation
   headroom = multiple ceiling × earnings growth), HOW FAST (historical velocity
   across timeframes), and HOW LONG (cycle duration from the stock's own history).
@@ -146,20 +146,20 @@ CONVICTION: <High / Medium / Low>  — size accordingly downstream
 
 ---
 
-## Worked Examples (from live analysis)
+## Worked Examples (de-named archetypes — illustrative, per Standing Order 11)
 
-### Eternal — the maxed-multiple slow mover
+### A maxed-multiple mega-cap — the slow mover
 - P/E ~682, PEG 7.72, EPS(TTM) ₹0.38, mega-cap ₹2.5L cr. Net margin ~2% (just turned profitable).
 - **Multiple lever: spent.** 682x has ~no plausible re-rating headroom; if anything it must *compress* as earnings grow into it.
-- **Upside is earnings-only, on a huge base → slow.** Even a doubling of EPS with the multiple compressing yields a modest price change over *quarters-to-years*. Hence the operator's own read: moves of ₹10–30 over long periods.
+- **Upside is earnings-only, on a huge base → slow.** Even a doubling of EPS with the multiple compressing yields a modest price change over *quarters-to-years* — moves of ₹10–30 over long periods.
 - Velocity: ~1–2%/week. Verdict: **HOLD / range vehicle, not a 1-month swing.**
 
-### Paras — the live-headroom fast mover
+### A live-headroom small-cap — the fast mover
 - P/E ~107–130, PEG 0.62, EPS(TTM) ₹11.1, small-cap ₹9,540 cr. Profit CAGR ~40%, accelerating; margins ~18–30%; near debt-free.
-- **Both levers live:** earnings growing ~40%/yr AND multiple has room toward a hot-defence-small-cap peak. Ceiling scenario (illustrative, assumptions stated): EPS ₹11 → ~₹15–20 × 100–150x = **~₹1,800–3,000 IF it all works** — matches the "how far can it go" intuition, but ⚠ multiple can compress and defence earnings are lumpy.
-- **Ownership flag:** the +149% run happened while FII/MF *trimmed* and retail *rose* → sentiment-fuelled, less durable.
+- **Both levers live:** earnings growing ~40%/yr AND multiple has room toward a hot-sector small-cap peak. Ceiling scenario (illustrative, assumptions stated): EPS ₹11 → ~₹15–20 × 100–150x = **~₹1,800–3,000 IF it all works** — but ⚠ multiple can compress and the sector's earnings are lumpy.
+- **Ownership flag:** a +149% run that happened while FII/MF *trimmed* and retail *rose* → sentiment-fuelled, less durable.
 - Velocity: ATR ~7%/day → a 1-month 10%+ move is realistic *in either direction*.
-- Cycle base rate: prior −35% crash took **~10 months** to recover and made a lower low first. Verdict: **fast SWING vehicle, high reward, high risk — size small, respect the stop.**
+- Cycle base rate: a prior −35% crash took **~10 months** to recover and made a lower low first. Verdict: **fast SWING vehicle, high reward, high risk — size small, respect the stop.**
 
 ---
 

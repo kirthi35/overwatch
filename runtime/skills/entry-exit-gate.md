@@ -2,7 +2,7 @@
 name: entry-exit-gate
 description: >
   USE THIS SKILL to decide WHEN to pull the trigger on a bet that swing-horizon-sizer
-  already sized as a GO — e.g. "is now the moment to enter Paras," "check the entry
+  already sized as a GO — e.g. "is now the moment to enter this," "check the entry
   gate," "can I buy this here," "should I add now." It runs the mandatory timing
   gates in order and stands down if ANY fails: daily-close trend, order-book
   sell:buy ratio, a CLOSED green reversal candle, and the no-chase ceiling. It does
@@ -46,7 +46,7 @@ fetch_historical_candle_data      interval_in_minutes:1440, last_n_days:2   # co
 resolve_market_time_and_calendar  # is it a live session? are we past the first 15-20 min?
 ```
 
-OFFICIAL CLOSE RULE: 'Daily close' = the close field of the completed daily candle from fetch_historical_candle_data (interval 1440). The 15:30 LTP from get_quotes_and_depth is NOT the close (NSE official close is the last-30-min VWAP; verified divergence: PARAS Jul 2 2026 — LTP snapshot ₹1,333.10 vs official close ₹1,343.80). Any gate keyed on the daily close evaluates only after the completed candle is fetchable.
+OFFICIAL CLOSE RULE: 'Daily close' = the close field of the completed daily candle from fetch_historical_candle_data (interval 1440). The 15:30 LTP from get_quotes_and_depth is NOT the close — the NSE official close is the last-30-min VWAP, and a ₹10+ divergence between the two is on record (evidence: L-2026-07-02). Any gate keyed on the daily close evaluates only after the completed candle is fetchable.
 
 ## Output
 ```
@@ -63,8 +63,8 @@ GTT stop to arm in Groww: ₹<stop>   (from swing-horizon-sizer)
   End every operator-facing output with the standing not-financial-advice line.
 
 ## Entry modes — FORCED CHOICE, never blend (Standing Order 1 applies to this section)
-Declare the mode BEFORE analysis. Blending modes produced the worst of both on 2026-07-02
-(no dip captured, no real confirmation, full reversal risk).
+Declare the mode BEFORE analysis. Blending modes produces the worst of both — no dip
+captured, no real confirmation, full reversal risk (evidence: L-2026-07-02).
 
 MODE A — DIP (buy structural support):
   - Resting limit order AT a pre-identified structural support (prior reversal low, base
@@ -84,7 +84,7 @@ MODE B — BREAKOUT (buy confirmed strength):
     breakout is missed — a valid outcome, not a problem to engineer around.
 
 FORBIDDEN: entering mid-range on a forming intraday candle (neither at support nor above
-confirmed resistance). That is the 2026-07-02 PARAS entry — the defined anti-pattern.
+confirmed resistance). This is the documented anti-pattern (evidence: L-2026-07-02).
 
 ## Pipeline Position
 `valuation-cycle-analyzer` → `swing-horizon-sizer` → **`entry-exit-gate`** → live

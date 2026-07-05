@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { Monitor, Alert, OverwatchStore } from './types.js';
+import { Monitor, Alert, JournalRecord, OverwatchStore } from './types.js';
 
 // Sanitize a monitor/thesis id into a safe filename stem (no path traversal).
 // Same rule the arm_monitor tool has always used.
@@ -84,5 +84,13 @@ export class FileStore implements OverwatchStore {
 
   async getThesis(id: string): Promise<unknown | null> {
     return readJSON<unknown>(path.join(this.thesesDir, `${sanitizeName(id)}.json`));
+  }
+
+  async appendJournal(record: JournalRecord): Promise<void> {
+    ensureDir(this.thesesDir);
+    // Append-only, one JSON object per line — the theses/journal.jsonl convention the
+    // trade-journal skill already documents.
+    const line = JSON.stringify({ ts: new Date().toISOString(), ...record });
+    fs.appendFileSync(path.join(this.thesesDir, 'journal.jsonl'), line + '\n', 'utf8');
   }
 }

@@ -13,7 +13,7 @@
     "dev": "npm run build:backends && concurrently -k -n server,worker,web -c green,yellow,cyan \"npm start -w @overwatch/server\" \"npm start -w @overwatch/worker\" \"npm run dev -w @overwatch/web\"",
     "start": "npm run start -w @overwatch/cli",
     "seed": "node scripts/seed.mjs",
-    "test": "node runtime/daemons/test-monitor-runtime.js"
+    "test": "node runtime/daemons/test-monitor-runtime.js && node --test --experimental-strip-types packages/web/src/lib/trades.test.ts"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "^0.80.2",

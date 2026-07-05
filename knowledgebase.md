@@ -1,14 +1,23 @@
 # Overwatch — Knowledge Base
 
-**Product:** Overwatch — local-first terminal AI trading assistant (NSE)
-**Branch:** `feat/telegram-alert-delivery`
-**Last updated:** 2026-07-01 (initial KB — written after reconciling the doctrine
-skills into the staged pipeline; documents the codebase as-built and flags open threads)
+**Product:** Overwatch — NSE AI trading assistant. Originally a local-first terminal
+CLI; **this branch (`feat/web-app-monorepo`) turns it into a multi-tenant React +
+Firebase web app** on an npm-workspaces monorepo, deployed on a Pi box.
+**Branch:** `feat/web-app-monorepo` (was `feat/telegram-alert-delivery`)
+**Last updated:** 2026-07-05 (added **Part B** — the web-app pivot: monorepo, Fastify
+API, monitor worker, React SPA, and production deployment. Sections 1–15 below still
+describe the original single-user CLI, which now lives in `packages/cli` and still runs.)
 
 Single source of truth for the codebase. Pairs with [`CONTEXT.md`](./CONTEXT.md)
 (the glossary / ubiquitous language) and [`docs/adr/`](./docs/adr/) (why decisions
 were made). Where this doc names doctrine terms (Raid, Campaign, gate, monitor,
 fire, blind, operator, capacity), `CONTEXT.md` is authoritative.
+
+> **Reading guide:** **Part A (§1–§15)** = the original CLI, unchanged, now
+> `packages/cli`. **Part B (§16–§26)** = the multi-tenant web app added on this
+> branch. Where they conflict (e.g. `~/.overwatch/` files vs Firestore; `process.env`
+> creds vs per-user in-memory creds), **Part B is authoritative for the server/worker/
+> web paths**; Part A remains authoritative for the CLI.
 
 ---
 
@@ -29,6 +38,20 @@ fire, blind, operator, capacity), `CONTEXT.md` is authoritative.
 13. File & Module Map
 14. Directory Structure
 15. Known Gaps & Divergences
+
+**Part B — Multi-Tenant Web App (branch `feat/web-app-monorepo`)**
+
+16. Web-App Pivot — What Changed & Why
+17. Monorepo Layout (`packages/*`)
+18. Multi-Tenant Architecture & Firestore Data Model
+19. Core Library Changes (`@overwatch/core`)
+20. Doctrine Shell-Awareness (bash-off on the server)
+21. API Server (`@overwatch/server`) — Fastify + SSE + POST
+22. Monitor Worker (`@overwatch/worker`)
+23. Web App (`@overwatch/web`) — Vite + assistant-ui
+24. Secrets & Environment (server/worker)
+25. Production Deployment (Pi box + Netlify)
+26. Known Gaps & Open Items (web app)
 
 ---
 
@@ -502,3 +525,337 @@ docs/adr/000{1,2,3}-*.md   architecture decisions
 - **`main([])`:** empty argv — verify `-r`/`-c`/fork CLI flags reach Pi (§11).
 - **`test-mcp.ts`:** stale — uses the retired `SSEClientTransport` and a fake token;
   the regression test (`test-monitor-runtime.js`) enforces "never `SSEClientTransport`".
+
+---
+
+# PART B — Multi-Tenant Web App (branch `feat/web-app-monorepo`)
+
+## 16. Web-App Pivot — What Changed & Why
+
+The CLI (Part A) is a **single-operator, local-first** app: one Groww token, one LLM
+key, state in `~/.overwatch/` files, credentials in `process.env` + OS keychain,
+conversation history in Pi JSONL keyed by workspace path with **no user identity**.
+
+This branch keeps the **doctrine untouched** but wraps it as a **multi-tenant web
+product**: many isolated users log in (Firebase Auth), chat over a browser UI, arm
+monitors, and get fires surfaced back into the originating conversation — with
+per-user data isolation in Firestore. The **one hard invariant is preserved: D1 —
+never places orders** (Groww read-only everywhere).
+
+**Locked decisions** (see the plan + `overwatch-webapp-pivot` memory):
+1. Multi-tenant, full per-user isolation.
+2. **BYOK** — each user brings their own Groww read-only token + LLM key, stored
+   **encrypted per-user** (AES-256-GCM). *In dev today this is bypassed — see §24.*
+3. Backend on the existing Pi box (designed to lift to Cloud Run: storage in
+   Firestore, secrets behind an interface).
+4. Skills **view-only** in v1 (global doctrine, seeded from `runtime/skills/`).
+5. Doctrine refactored into a **transport-agnostic library** (`@overwatch/core`) that
+   the CLI, server, and worker all consume.
+6. **npm-workspaces monorepo**; API = **Fastify + SSE (server→client) + POST (commands)**,
+   long-lived Node process (NOT Cloud Functions).
+7. Frontend = **Vite React SPA + assistant-ui**, host-agnostic static bundle.
+   **Firebase = Auth + Firestore ONLY (not Hosting).** SPA deploys to **Netlify**.
+
+The blocker the refactor solved: the CLI flowed credentials through **`process.env`**
+(process-global — two users would clobber each other). Part B makes credentials
+**per-session/per-tick, in-memory only** (`AuthStorage.inMemory()` + a fresh
+`ModelRegistry` per session; a `GrowwMcpBridge` instance per user).
+
+---
+
+## 17. Monorepo Layout (`packages/*`)
+
+Root is an npm-workspaces monorepo. Shared types live in `core`.
+
+| Package | Name | Role |
+|---|---|---|
+| `packages/core` | `@overwatch/core` | Doctrine as a **library**, transport-agnostic: `makeOverwatchExtension(UserContext)`, `GrowwMcpBridge` (per-user token), `OverwatchStore` interface, custom tools, skill auto-loader, gate/watchdog (`evaluateGates`/`fail`/`recover`), `FileStore`, prompt builder. No HTTP, no Firestore dependency. |
+| `packages/cli` | `@overwatch/cli` | The original terminal app (Part A), now consuming `core` + `FileStore` (single-user, local files). Kept working as regression safety. |
+| `packages/server` | `@overwatch/server` | Fastify + SSE + POST API; `SessionPool`; `FirestoreStore`; per-user creds; message persistence; alert routing. |
+| `packages/worker` | `@overwatch/worker` | Multi-tenant monitor poller (replaces the single `overwatch-monitord`). |
+| `packages/web` | `@overwatch/web` | React (Vite) SPA + assistant-ui. Standalone (no `@overwatch/*` deps) — talks to the API over HTTP + Firestore over the JS SDK. |
+
+Root `package.json` scripts: `build` (core + cli), **`build:backends`** (core + server +
+worker), `dev` (build backends then `concurrently` server + worker + web).
+
+---
+
+## 18. Multi-Tenant Architecture & Firestore Data Model
+
+```
+React SPA (Netlify, over-watch.in)
+  │  Firebase Auth (Google/email) → ID token on every backend call
+  ├─ HTTPS: GET SSE stream + POST commands ───────▶ @overwatch/server (Pi box, Apache→:8787)
+  │                                                   • SessionPool (warm AgentSession per uid:cid)
+  ├─ Firestore onSnapshot (realtime lists) ◀────────  • per-session AuthStorage+Registry+GrowwMcpBridge
+  │                                                   • alert-router (Firestore→sendCustomMessage)
+  ▼
+Firestore  users/{uid}/…  (per-user isolation)  ◀──── @overwatch/worker (poller)
+  skills/ (global, read-only)                          • onSnapshot config sync + hot cache
+                                                        • per-user Groww token; writes fires/state
+```
+
+Two backend processes, both consuming `@overwatch/core` + storing in Firestore.
+Firestore is the durable store **and** the cross-process signal bus (onSnapshot) — no
+Redis/PubSub in v1.
+
+**Firestore layout** (per-user isolation via `users/{uid}/**`; field shapes reuse the
+CLI's so doctrine logic is untouched):
+
+```
+users/{uid}
+  profile, settings/{capital,sectorMap,prefs}
+  secrets/creds        (AES-256-GCM encrypted; NOT client-readable; server-only)
+  conversations/{cid}  { title, model:{provider,id}, createdAt, updatedAt, source? }
+    messages/{seq}     { seq, role, content, msg (verbatim Pi message), ts }
+  monitors/{name}      { …arm config…, conversationId, gates:{…}, state:{…} }
+  theses/{id}          thesis / trade-card / active-position JSON
+  alerts/{autoId}      { ts, severity, message, monitorName?, conversationId?, terminal?, surfaced? }
+skills/{name}          (GLOBAL, read-only) — powers the Settings viewer
+```
+
+**Security rules** (`firestore.rules`): owner-only `users/{uid}/**`; `secrets/**`
+default-deny (written only by the server via Admin SDK, never client-readable); `skills`
+read-only. Verified two-user isolation.
+
+**Message storage decision (important):** every message is stored — user, assistant,
+**and toolResult** — with the **verbatim Pi `msg`** object (like the JSONL), so a
+conversation resumes with **full model context including tool results**. The UI filters
+to show only what's useful. On resume, `SessionManager.inMemory()` + `appendMessage`
+replays each stored `msg` verbatim (mirrors Pi's own save/load: linear parent chain +
+`buildSessionContext`), so the LLM gets full history. See §21.
+
+---
+
+## 19. Core Library Changes (`@overwatch/core`)
+
+The doctrine's four modules were made **mode-agnostic** and parameterized by a
+`UserContext`:
+
+```ts
+interface UserContext {
+  uid; conversationId?; growwToken;                 // decrypted, in-memory only
+  llm: { provider:'claude'|'glm', anthropicKey?, ollama?:{apiKey,baseUrl,models,modelId} };
+  telegram?; store: OverwatchStore; skillsDir; onMonitorArmed?;
+}
+makeOverwatchExtension(u, { alertBridge?, shellTools? }): ExtensionFactory
+```
+
+- **`mcp-bridge.ts`** → `class GrowwMcpBridge` constructed with `u.growwToken`; former
+  module singletons are now instance fields. One MCP socket per warm session.
+- **`custom-tools.ts`** → `console_log_alert` / `arm_monitor` / `disarm_monitor` /
+  `write_thesis` all route to `u.store`. **Added `list_monitors`** (§20). Daemon-spawn
+  deleted (the worker owns polling; the CLI wires `u.onMonitorArmed`).
+- **`OverwatchStore`** interface (the seam): `putMonitor/getMonitor/listMonitors/
+  deleteMonitor/putMonitorState`, `appendAlert/watchAlerts`, `putThesis/getThesis`.
+  Two impls: `FileStore` (`core`, CLI) and `FirestoreStore` (`server`, uid-scoped).
+- **`monitor-gates.ts`** — `evaluateGates` + `fail`/`recover` watchdog + `marketOpen`/
+  `istClock`, ported from the CJS daemon so the worker and CLI share one implementation.
+- **`telegram.ts`** — takes config as a param instead of reading env/files.
+
+---
+
+## 20. Doctrine Shell-Awareness (bash-off on the server)
+
+The CLI runs with built-in shell tools (`bash/read/write/edit`) and local
+`~/.overwatch/` files + a local `monitord`. The **multi-tenant server disables shell
+tools** (`noTools:'builtin'` + `excludeTools`) and stores everything in Firestore.
+
+The master prompt was therefore made **environment-aware**:
+
+- `MASTER_SYSTEM_PROMPT` → **`buildMasterPrompt({ shellTools })`**. `MASTER_SYSTEM_PROMPT`
+  is retained as `buildMasterPrompt({ shellTools: true })` (byte-identical CLI prompt).
+- `OverwatchExtensionOptions.shellTools` (default `true`). The **server passes
+  `shellTools: false`** (`session-builder.ts`), which swaps the ACTIVE TOOLS + MONITORING
+  sections + DATA-INTEGRITY rules 3 & 5 to drop `bash`/`~/.overwatch`/`monitord`/
+  `alerts.log`, state "you have NO shell access", and point reads to `list_monitors`.
+- **New tool `list_monitors`** (`custom-tools.ts`): reads `u.store.listMonitors()` and
+  returns each monitor's gates + last-polled state, with STALE labels (rule 3), so the
+  model inspects monitors **without shelling out** (`cat monitors/*.json`).
+
+**Why:** resumed/imported CLI conversations trained the model to call `bash` (to probe
+MCP or read monitor JSON). On the shell-less server those calls returned
+`"Tool bash not found"` in chat. This change stops the model reaching for tools that
+don't exist server-side.
+
+---
+
+## 21. API Server (`@overwatch/server`) — Fastify + SSE + POST
+
+**One in-process `AgentSession` per active conversation** (not a subprocess per
+conversation) — cleaner secret injection, higher session density, one fewer serialization
+hop for streaming.
+
+Key modules (`packages/server/src/`):
+
+- **`firebase.ts`** — Admin SDK init. `OVERWATCH_FIREBASE_KEY` = **absolute path** to the
+  service-account JSON (or `GOOGLE_APPLICATION_CREDENTIALS`). `getDb()` sets
+  `ignoreUndefinedProperties`. `verifyIdToken()` → uid.
+- **`session-builder.ts`** — `buildUserSession(u, opts)`: per-session `AuthStorage.inMemory()`
+  + fresh `ModelRegistry` (registers the GLM/`ollama-cloud` provider when the user has
+  Ollama creds). `noTools:'builtin'` + `excludeTools` (shell off). `pickModel` honours a
+  desired model, then GLM, then an `ANTHROPIC_DEFAULT_ORDER` (avoids defaulting to an EOL
+  model). **Seeds prior messages** verbatim (`appendMessage(msg)`) so resume has full
+  context incl. tool results. Passes `shellTools:false` to the doctrine (§20).
+- **`pool.ts`** — `SessionPool` keyed `uid:cid`: lazy build, LRU + idle dispose, one
+  `subscribe()` fanned out to all SSE sinks. `build` = `buildUserContext` → `loadSeed`
+  (all stored messages, seq order) → `buildUserSession` → `attachPersistence` →
+  `attachAlertRouter`.
+- **`persistence.ts`** — on `agent_end`, flushes new session messages to
+  `conversations/{cid}/messages` (`seq` zero-padded, `role`, `content` text, **`msg`
+  verbatim**, `ts`); LLM-generates a title on the first turn. Mirrors Pi's JSONL append.
+- **`alert-router.ts`** — `onSnapshot` on this conversation's CRITICAL alerts →
+  `session.sendCustomMessage({ customType:'overwatch-monitor' }, { triggerTurn:true })` →
+  the agent surfaces + one-line-summarizes the fire in-chat; marks `surfaced:true`.
+- **`title.ts`** — `generateTitle` (a cheap `noDoctrine` session).
+- **`firestore-store.ts`**, **`secrets-store.ts`**, **`crypto.ts`** (AES-256-GCM,
+  key from `OVERWATCH_SECRET_KEY`), **`user-context.ts`** (`buildUserContext` — loads
+  encrypted creds, or dev `.env` creds — §24), **`env.ts`** (`loadDotenv`,
+  `devCredsFromEnv`, `DEV_CREDS_ENABLED`).
+- **`main.ts`** — boots it; `PORT` (default 8787), binds `0.0.0.0`. **`OVERWATCH_CORS_ORIGIN`
+  is parsed as a comma-separated allowlist** → `string[]` for `@fastify/cors`; unset →
+  reflect any origin (dev).
+
+**Routes** (all authed via `Authorization: Bearer <Firebase ID token>` → uid):
+`GET /health`, `POST /secrets`, `GET /models`, `POST /conversations`,
+`DELETE /conversations/:cid` (recursiveDelete), `POST /conversations/:cid/{prompt,steer,
+abort,model}`, `GET /conversations/:cid/stream` (**SSE**). CORS: methods GET/POST/DELETE/
+OPTIONS, headers Authorization/Content-Type.
+
+> **SSE + CORS gotcha:** the stream handler `reply.hijack()`s, which bypasses
+> `@fastify/cors`, so it sets `Access-Control-Allow-Origin` (reflected origin) + `Vary`
+> manually on the raw response. The SPA reads the stream via **`fetch`** (not native
+> `EventSource`) so it can send the bearer header.
+
+`scripts/`: `seed-skills.ts`, `deploy-rules.ts`, `import-cli-sessions.ts` (imports past
+`~/.pi/agent/sessions/**.jsonl` into a user's Firestore conversation list, full `msg`
+per entry, LLM-titled, idempotent).
+
+---
+
+## 22. Monitor Worker (`@overwatch/worker`)
+
+Replaces the single `overwatch-monitord`. **Hybrid design** to avoid Firestore churn
+(a monitor polls ~375×/day):
+
+- **Config sync via `onSnapshot`** on `collectionGroup('monitors')` — Firestore *pushes*
+  a doc only when it changes (armed/disarmed/edited); the initial snapshot rehydrates all
+  armed monitors on startup (crash recovery for free).
+- **Hot state = worker-local cache**, mutated every tick (free/fast).
+- **60s tick**, NSE hours only (reuses `marketOpen`/`istClock`), all against the cache.
+  Per **uid**: decrypt that user's Groww token, open ONE MCP client, fetch
+  `get_quotes_and_depth` (+ candles if a green-candle gate is set), run **`evaluateGates`**
+  verbatim, mutate state via the `fail`/`recover` watchdog.
+- **Firestore writes only on transitions**: fire (alert doc first, then `state.fired`),
+  blind escalation (WARN/CRIT), RECOVERED, breakout heads-up (once), plus a **throttled
+  state heartbeat (~2–3 min)** for the Monitors-tab "last polled / STALE" label.
+- **Per-user token** (BYOK) — no symbol dedup across users; a dead token blinds only its
+  owner. Telegram delivery per user, severity-gated.
+
+`main.ts` logs `"[worker] up. Tick 60s during NSE hours; config via onSnapshot; per-user token."`
+
+---
+
+## 23. Web App (`@overwatch/web`) — Vite + assistant-ui
+
+Vite 6 + React 19 + Tailwind v4 + `@assistant-ui/react`. **Standalone** (only public npm
+deps; no `@overwatch/*`), so Netlify builds it directly.
+
+- **Chat**: `useLocalRuntime` + a custom `ChatModelAdapter` — `run()` does
+  `POST /conversations/:cid/prompt` then reads `GET …/stream` (SSE via fetch reader),
+  yielding accumulated text + `tool-call` parts as `message_update`s arrive; `abortSignal`
+  → `POST …/abort`. On open, rehydrates messages from Firestore (filtering user/assistant/
+  custom, cleaning monitor-event text). Markdown via react-markdown + remark-gfm. Copy
+  button (`ActionBarPrimitive.Copy`). Monitor fires render inline so the user can reply.
+- **Firestore onSnapshot** drives the conversation list, Monitors, and Alerts tabs (live
+  whether or not a session is warm). Settings shows skills (view-only).
+- **Config**: `src/firebase.ts` holds the **public** Firebase client config (safe to
+  commit). `src/lib/api.ts` — `API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8787'`.
+  **`VITE_API_URL` is inlined at build time** → must be set to the HTTPS API domain, else
+  the bundle calls localhost.
+- Theme: blue accent, light/dark (`index.css` Tailwind v4 tokens).
+
+**Netlify** (`netlify.toml` + `public/_redirects`): base `packages/web`, publish `dist`,
+Node 22, SPA fallback `/* → /index.html 200`, and `VITE_API_URL` baked for git-connected
+builds. Drag-drop deploys use the locally-built `dist` (same `VITE_API_URL`) + the
+`_redirects` file.
+
+---
+
+## 24. Secrets & Environment (server/worker)
+
+- **Per-user secrets**: `users/{uid}/secrets/creds` — AES-256-GCM envelope
+  (`crypto.ts`), master key `OVERWATCH_SECRET_KEY`, written only by the server callable,
+  never client-readable, decrypted in-memory per session/tick.
+- **Firebase Admin key**: `OVERWATCH_FIREBASE_KEY` = absolute path to the service-account
+  JSON (full-project admin — never committed; `chmod 600` on the box).
+
+Server/worker env (repo-root `.env`, auto-loaded by `loadDotenv`):
+
+| Var | Purpose |
+|---|---|
+| `OVERWATCH_FIREBASE_KEY` | abs path to Firebase Admin service-account JSON |
+| `OVERWATCH_SECRET_KEY` | AES master key for per-user secrets |
+| `OVERWATCH_CORS_ORIGIN` | comma-separated frontend origin allowlist |
+| `PORT` | server port (default 8787) |
+| `OVERWATCH_DEV_CREDS_FROM_ENV` | `1` = single-operator dev fallback (see below) |
+| `groww_api_key`, `ANTHROPIC_API_KEY`, `OLLAMA_API_KEY`, `OVERWATCH_LLM`, `overwatch_glm_model` | dev creds/model (same keys the CLI uses) |
+
+> ⚠ **DEV single-operator mode:** when `OVERWATCH_DEV_CREDS_FROM_ENV=1` **and** a user has
+> no stored creds, `buildUserContext` falls back to `devCredsFromEnv(.env)` — so **every
+> logged-in user shares the `.env` Groww token + LLM key**. This is *not* real multi-tenant
+> isolation. For that, deploy the BYOK key-entry UI (parked in v1) and set the flag to `0`.
+
+---
+
+## 25. Production Deployment (Pi box + Netlify)
+
+**Box:** `151.185.47.45`, Ubuntu 24.04, 4 cores / 7 GB, root. Code at **`/opt/overwatch`**.
+
+- **Node 22** (via NodeSource). *Required*: the bundled `undici@8.5.0` (under
+  `@earendil-works/pi-coding-agent`) calls `worker_threads.markAsUncloneable`, added in
+  Node **22.10** — Node 20 crashes with `TypeError: webidl.util.markAsUncloneable is not a
+  function`.
+- **pm2** runs `overwatch-server` (:8787) + `overwatch-worker` from
+  `ecosystem.config.cjs`; `pm2 save` + systemd startup (survives reboot).
+- **Apache** reverse proxy: vhost `api.over-watch.in` → `http://127.0.0.1:8787`, **SSE-safe**
+  (`ProxyPass … flushpackets=on`, `ProxyTimeout 3600`, `no-gzip` for `text/event-stream`).
+  Modules: `proxy proxy_http headers ssl rewrite`.
+- **TLS**: certbot `--apache` on `api.over-watch.in` (Let's Encrypt, auto HTTP→HTTPS
+  redirect, auto-renew).
+- **ufw**: allow 22/80/443; **8787 NOT exposed** — only Apache reaches the server via
+  localhost.
+- **Secrets on box**: `/opt/overwatch/secrets/serviceAccount.json` + `/opt/overwatch/.env`,
+  both `chmod 600`. `OVERWATCH_FIREBASE_KEY` rewritten to the box path.
+
+**DNS:** `api.over-watch.in` → A → `151.185.47.45` (box). Apex `over-watch.in` + `www` →
+Netlify (frontend).
+
+**Frontend:** built locally with `VITE_API_URL=https://api.over-watch.in` (baked; verified
+0 localhost refs) → `packages/web/dist` → deployed to Netlify (drag-drop or git). After
+deploy: add the Netlify domain(s) to **Firebase → Auth → Authorized domains**.
+
+**Verified end-to-end:** HTTPS `/health` = ok; HTTP→HTTPS 301; cert valid; `/models` via
+Apache with a real Firebase token = 200 (29 models incl GLM); CORS allows `over-watch.in`,
+rejects unknown origins.
+
+---
+
+## 26. Known Gaps & Open Items (web app)
+
+- **Shared dev creds** — `OVERWATCH_DEV_CREDS_FROM_ENV=1` means all users share the
+  `.env` creds; true multi-tenant needs the BYOK onboarding UI + flag `0` (§24).
+- **Netlify custom domain** — `over-watch.in` cert provisioning was pending (TLS mismatch
+  at first load); `www` not yet resolving. Finish the Netlify custom-domain step.
+- **Stale-bundle trap** — the "No LLM key found" message is shown on **any** `/models`
+  failure (misleading); the common cause is a `dist` built without `VITE_API_URL` (calls
+  `localhost`). Rebuild with the prod URL + hard-refresh.
+- **SSE route CORS** reflects the request origin (the hijacked response isn't run through
+  the `@fastify/cors` allowlist). Functional; tighten to the allowlist if needed.
+- **Scaling ceiling** — one box (RAM-bound warm sessions + a worker holding every user's
+  token, synchronized NSE-hours load). Firestore storage keeps the Cloud Run lift a
+  transport change; LRU + staggered polling mitigate.
+- **Bundle size** — web JS is ~1 MB (269 KB gzip); no code-splitting yet.
+- **Phase 7 hardening** (partially done): pm2 boot-persist ✅, firewall ✅, secrets 600 ✅;
+  remaining — delete the dev `.env`/`DEV_CREDS_FROM_ENV` path for real multi-tenant, rules
+  re-audit, per-session crash handlers.

@@ -40,6 +40,7 @@ export type {
   MonitorState,
   Alert,
   AlertSeverity,
+  JournalRecord,
   TelegramConfig,
   OllamaConfig,
 } from './types.js';
