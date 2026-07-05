@@ -1,5 +1,5 @@
 import { getAuth } from 'firebase-admin/auth';
-import { getDb } from '../firebase.js';
+import { getDb, initFirebase } from '../firebase.js';
 import type { Trade } from '@overwatch/core';
 
 // Backfill the three audited Jul 1–3 trades as full audit records into ONE user's
@@ -80,6 +80,7 @@ async function resolveUid(): Promise<string> {
 }
 
 async function main() {
+  initFirebase(); // ensure the default app exists before getAuth()/getDb()
   const uid = await resolveUid();
   const db = getDb();
   for (const t of TRADES) {
