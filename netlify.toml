@@ -1,0 +1,28 @@
+# Netlify deploy config for the Overwatch web SPA (packages/web).
+# The web package is standalone (no @overwatch/* workspace deps), so Netlify
+# builds it directly from its own directory — fast, no backend deps installed.
+#
+# REQUIRED env var (set in Netlify UI → Site settings → Environment variables):
+#   VITE_API_URL = https://<your-api-domain>   (the Apache-fronted backend on the box)
+# Without it the SPA falls back to http://localhost:8787 and cannot reach the API.
+#
+# After first deploy, also add the Netlify site domain to Firebase console →
+# Authentication → Settings → Authorized domains, or Google/email login is blocked.
+
+[build]
+  base = "packages/web"
+  command = "npm install && npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "22"
+  # Bake the backend URL into the bundle so a git-connected build can't miss it.
+  # (Drag-drop deploys don't run this build — for those the dist is built locally
+  # with the same VITE_API_URL.) Override in the Netlify UI if the domain changes.
+  VITE_API_URL = "https://api.over-watch.in"
+
+# SPA client-side routing: serve index.html for any path (fixes 404 on refresh/deep-link).
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
