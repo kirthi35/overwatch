@@ -42,14 +42,42 @@ export function makeChatAdapter(cid: string): ChatModelAdapter {
         // 3. read SSE frames. Build content = accumulated text + tool-call parts, so
         // assistant-ui renders both the prose and inline tool cards.
         let buf = '';
-        let acc = '';
-        const tools = new Map<string, { toolName: string; args: unknown; result?: unknown; isError?: boolean }>();
+        // Render parts in the ORDER the model produced them (Pi's message.content already
+        // interleaves text ↔ tool-call), so a tool call shows inline where it happened —
+        // not dumped after all the prose. `started`/`results` enrich by toolCallId and act
+        // as a fallback if a tool arrives only via execution events (never render at the end
+        // of the message when content carried it in the right place).
+        let lastContent: any[] = [];
+        let errText = '';
+        const started = new Map<string, { toolName: string; args: unknown }>();
+        const results = new Map<string, { result?: unknown; isError?: boolean }>();
+        const TOOL_TYPES = new Set(['tool_use', 'toolCall', 'tool-call', 'toolUse', 'tool_call']);
+        const isTool = (p: any) => p && typeof p === 'object' && TOOL_TYPES.has(p.type);
+        const setContent = (content: unknown) => {
+          if (Array.isArray(content)) lastContent = content as any[];
+          else if (typeof content === 'string') lastContent = content ? [{ type: 'text', text: content }] : [];
+        };
         const build = (): any[] => {
           const parts: any[] = [];
-          if (acc) parts.push({ type: 'text', text: acc });
-          for (const [toolCallId, t] of tools) {
-            parts.push({ type: 'tool-call', toolCallId, toolName: t.toolName, args: t.args ?? {}, result: t.result, isError: t.isError });
+          const rendered = new Set<string>();
+          for (const p of lastContent) {
+            if (!p || typeof p !== 'object') continue;
+            if (p.type === 'text') {
+              if (p.text) parts.push({ type: 'text', text: p.text });
+            } else if (isTool(p)) {
+              const id = p.toolCallId ?? p.id ?? '';
+              const r = results.get(id) ?? {};
+              parts.push({ type: 'tool-call', toolCallId: id, toolName: p.toolName ?? p.name ?? 'tool', args: p.args ?? p.arguments ?? p.input ?? {}, result: r.result, isError: r.isError });
+              if (id) rendered.add(id);
+            }
           }
+          // Fallback only: tools seen via execution events but absent from message.content.
+          for (const [id, t] of started) {
+            if (rendered.has(id)) continue;
+            const r = results.get(id) ?? {};
+            parts.push({ type: 'tool-call', toolCallId: id, toolName: t.toolName, args: t.args ?? {}, result: r.result, isError: r.isError });
+          }
+          if (errText && !parts.some((p) => p.type === 'text')) parts.push({ type: 'text', text: errText });
           return parts;
         };
         while (true) {
@@ -69,19 +97,20 @@ export function makeChatAdapter(cid: string): ChatModelAdapter {
               continue;
             }
             if (evt.type === 'message_update' || evt.type === 'message_end') {
-              const t = partsToText(evt.message?.content);
-              if (t) acc = t;
+              setContent(evt.message?.content);
               if (evt.type === 'message_end' && evt.message?.stopReason === 'error') {
-                acc = acc || `⚠️ ${evt.message?.errorMessage ?? 'model error'}`;
+                errText = `⚠️ ${evt.message?.errorMessage ?? 'model error'}`;
               }
-              if (build().length) yield { content: build() };
+              const parts = build();
+              if (parts.length) yield { content: parts };
             } else if (evt.type === 'tool_execution_start') {
-              tools.set(evt.toolCallId, { toolName: evt.toolName, args: evt.args });
-              yield { content: build() };
+              started.set(evt.toolCallId, { toolName: evt.toolName, args: evt.args });
+              const parts = build();
+              if (parts.length) yield { content: parts };
             } else if (evt.type === 'tool_execution_end') {
-              const t = tools.get(evt.toolCallId);
-              if (t) { t.result = evt.result; t.isError = evt.isError; }
-              yield { content: build() };
+              results.set(evt.toolCallId, { result: evt.result, isError: evt.isError });
+              const parts = build();
+              if (parts.length) yield { content: parts };
             } else if (evt.type === 'agent_end') {
               return;
             }
