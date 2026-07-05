@@ -36,6 +36,9 @@ service cloud.firestore {
       match /journal/{tradeId} {
         allow read, write: if isOwner(uid);
       }
+      match /trades/{tradeId} {
+        allow read, write: if isOwner(uid);
+      }
       match /settings/{settingId} {
         allow read, write: if isOwner(uid);
       }

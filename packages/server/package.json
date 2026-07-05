@@ -9,6 +9,7 @@
     "start": "node dist/main.js",
     "gen-secret": "node -e \"console.log(require('crypto').randomBytes(32).toString('base64'))\"",
     "seed-skills": "node dist/scripts/seed-skills.js",
+    "backfill-trades": "node dist/scripts/backfill-trades.js",
     "deploy-rules": "node dist/scripts/deploy-rules.js",
     "import-cli": "node dist/scripts/import-cli-sessions.js"
   },

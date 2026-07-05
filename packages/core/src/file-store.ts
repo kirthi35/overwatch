@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { Monitor, Alert, JournalRecord, OverwatchStore } from './types.js';
+import { Monitor, Alert, JournalRecord, Trade, OverwatchStore } from './types.js';
 
 // Sanitize a monitor/thesis id into a safe filename stem (no path traversal).
 // Same rule the arm_monitor tool has always used.
@@ -30,11 +30,13 @@ export class FileStore implements OverwatchStore {
   private readonly monDir: string;
   private readonly alertsLog: string;
   private readonly thesesDir: string;
+  private readonly tradesDir: string;
 
   constructor(private readonly baseDir: string) {
     this.monDir = path.join(baseDir, 'monitors');
     this.alertsLog = path.join(baseDir, 'alerts.log');
     this.thesesDir = path.join(baseDir, 'theses');
+    this.tradesDir = path.join(baseDir, 'trades');
   }
 
   private monFile(name: string): string {
@@ -89,8 +91,33 @@ export class FileStore implements OverwatchStore {
   async appendJournal(record: JournalRecord): Promise<void> {
     ensureDir(this.thesesDir);
     // Append-only, one JSON object per line — the theses/journal.jsonl convention the
-    // trade-journal skill already documents.
+    // trade-journal skill already documents. LEGACY: superseded by the trade spine.
     const line = JSON.stringify({ ts: new Date().toISOString(), ...record });
     fs.appendFileSync(path.join(this.thesesDir, 'journal.jsonl'), line + '\n', 'utf8');
+  }
+
+  private tradeFile(id: string): string {
+    return path.join(this.tradesDir, `${sanitizeName(id)}.json`);
+  }
+
+  async putTrade(trade: Trade): Promise<void> {
+    ensureDir(this.tradesDir);
+    fs.writeFileSync(this.tradeFile(trade.tradeId), JSON.stringify(trade, null, 2), 'utf8');
+  }
+
+  async getTrade(tradeId: string): Promise<Trade | null> {
+    return readJSON<Trade>(this.tradeFile(tradeId));
+  }
+
+  async listTrades(): Promise<Trade[]> {
+    try {
+      return fs
+        .readdirSync(this.tradesDir)
+        .filter((f) => f.endsWith('.json'))
+        .map((f) => readJSON<Trade>(path.join(this.tradesDir, f)))
+        .filter((t): t is Trade => t !== null);
+    } catch {
+      return [];
+    }
   }
 }

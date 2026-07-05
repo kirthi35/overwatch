@@ -49,6 +49,7 @@ don't hand-write it):
   "poll_minutes": 1,
   "time_gate_ist": 935,
   "candle_interval": 15,
+  "tradeId": "<from upsert_trade — links fired alerts to the trade for the audit>",
   "gates": {
     "stop_below": 1075,
     "zone": [1090, 1140],

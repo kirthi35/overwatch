@@ -1,5 +1,5 @@
 import type { Firestore } from 'firebase-admin/firestore';
-import { sanitizeName, type OverwatchStore, type Monitor, type Alert, type JournalRecord } from '@overwatch/core';
+import { sanitizeName, type OverwatchStore, type Monitor, type Alert, type JournalRecord, type Trade } from '@overwatch/core';
 
 // FirestoreStore — the uid-scoped OverwatchStore used by the server + worker.
 // Every path lives under users/{uid}/**, so isolation is enforced both by
@@ -54,9 +54,27 @@ export class FirestoreStore implements OverwatchStore {
   }
 
   async appendJournal(record: JournalRecord): Promise<void> {
-    // Append-only closed-trade log under users/{uid}/journal (owner-only per rules).
+    // LEGACY (superseded by the trade spine). Append-only under users/{uid}/journal.
     await this.db
       .collection(`users/${this.uid}/journal`)
       .add({ ts: new Date().toISOString(), ...record } as Record<string, unknown>);
+  }
+
+  private tradeDoc(tradeId: string) {
+    return this.db.doc(`users/${this.uid}/trades/${sanitizeName(tradeId)}`);
+  }
+
+  async putTrade(trade: Trade): Promise<void> {
+    await this.tradeDoc(trade.tradeId).set(trade as unknown as Record<string, unknown>, { merge: false });
+  }
+
+  async getTrade(tradeId: string): Promise<Trade | null> {
+    const snap = await this.tradeDoc(tradeId).get();
+    return snap.exists ? (snap.data() as Trade) : null;
+  }
+
+  async listTrades(): Promise<Trade[]> {
+    const snap = await this.db.collection(`users/${this.uid}/trades`).get();
+    return snap.docs.map((d) => d.data() as Trade);
   }
 }

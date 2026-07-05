@@ -62,6 +62,11 @@ GTT stop to arm in Groww: ₹<stop>   (from swing-horizon-sizer)
 - **Read-only:** you output a plan; the operator executes and arms the GTT manually.
   End every operator-facing output with the standing not-financial-advice line.
 
+**TRADE RECORD (audit spine, ADR 0005):** a GO must already be CARDED (pre-trade-commit called
+`upsert_trade` → a `tradeId`). When the operator confirms the manual fill, record it with
+`upsert_trade` (`status: "OPEN"`, `position: {entry, stop, shares}`, same `tradeId`). Arm the
+GTT monitor via `arm_monitor` with that `tradeId` so its fired alerts link to the trade.
+
 ## Entry modes — FORCED CHOICE, never blend (Standing Order 1 applies to this section)
 Declare the mode BEFORE analysis. Blending modes produces the worst of both — no dip
 captured, no real confirmation, full reversal risk (evidence: L-2026-07-02).

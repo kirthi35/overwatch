@@ -632,8 +632,9 @@ users/{uid}
     messages/{seq}     { seq, role, content, msg (verbatim Pi message), ts }
   monitors/{name}      { …arm config…, conversationId, gates:{…}, state:{…} }
   theses/{id}          thesis / trade-card / active-position JSON (<sym> / <sym>-card / <sym>-active-position)
-  journal/{autoId}     closed-trade records (trade-journal) — the Trades tab's CLOSED stage + expectancy feed
-  alerts/{autoId}      { ts, severity, message, monitorName?, conversationId?, terminal?, surfaced? }
+  trades/{tradeId}     the AUDIT SPINE (ADR 0005): status + thesis/card/position/gates/close(+verdict); monitors + alerts link by tradeId; journal = trades where status==CLOSED
+  journal/{autoId}     LEGACY closed-trade log (superseded by trades/)
+  alerts/{autoId}      { ts, severity, message, monitorName?, conversationId?, tradeId?, terminal?, surfaced? }
 skills/{name}          (GLOBAL, read-only) — powers the Settings viewer
 ```
 

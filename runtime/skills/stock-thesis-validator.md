@@ -127,6 +127,7 @@ WHAT WOULD CHANGE THIS CALL: [specific, observable trigger]
 6. End every run with the one observable thing that would flip the call. A thesis you can't
    falsify isn't analysis, it's faith.
 7. VALUATION-REFUTED CAP: if the valuation claim scores REFUTED and the archetype is structural growth with decelerating growth (QoQ revenue growth falling across the last 3 quarters), the verdict caps at WAIT FOR PULLBACK regardless of technicals (evidence: L-2026-07-03).
+8. TRADE RECORD (audit spine, ADR 0005): when the verdict is actionable (ACCUMULATE ZONE / WAIT FOR PULLBACK on a real candidate), start the trade record with `upsert_trade` (`status: "WATCHING"`, `thesis: {why, archetype, break_triggers}`) so the "why" is carried all the way to the eventual close for the weekly audit.
 
 ---
 

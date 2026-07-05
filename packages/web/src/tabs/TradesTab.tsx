@@ -1,24 +1,20 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useCollection } from '../lib/useFirestore';
-import {
-  correlateTrades,
-  computeExpectancy,
-  type ThesisDoc,
-  type JournalRow,
-  type LiveTrade,
-  type LifecycleStatus,
-} from '../lib/trades';
+import { effectiveStatus, computeAudit, type Trade, type TradeStatus } from '../lib/trades';
 
-// Trades tab — the per-user trade lifecycle, correlated by symbol from the docs the
-// doctrine skills already emit (<sym> / <sym>-card / <sym>-active-position) + the
-// append-only journal. Read-only: it surfaces trades, it never places an order (D1).
-// See docs/adr/0004.
+// Trades = the audit spine (ADR 0005). Every trade carries its thesis (why), plan, gates,
+// and — once closed — a verdict (thesis right? rules followed?). Monitors + alerts link by
+// tradeId. Read-only: it surfaces trades, it never places an order (D1).
 
-const STATUS_STYLE: Record<LifecycleStatus | 'CLOSED', string> = {
+interface MonitorRow { id: string; name?: string; symbol?: string; tradeId?: string }
+interface AlertRow { id: string; ts?: string; severity?: string; message?: string; tradeId?: string }
+
+const STATUS_STYLE: Record<TradeStatus, string> = {
   OPEN: 'bg-emerald-500/15 text-emerald-500',
   CARDED: 'bg-sky-500/15 text-sky-500',
-  WATCHING: 'bg-muted/15 text-muted',
+  WATCHING: 'bg-zinc-500/15 text-zinc-400',
   CLOSED: 'bg-zinc-500/15 text-zinc-400',
+  ABANDONED: 'bg-zinc-500/15 text-zinc-500',
 };
 
 function num(v: unknown): string {
@@ -27,129 +23,153 @@ function num(v: unknown): string {
 function pct(v: number | null): string {
   return v === null ? '—' : `${(v * 100).toFixed(0)}%`;
 }
-function r2(v: number | null): string {
-  return v === null ? '—' : `${v >= 0 ? '+' : ''}${v.toFixed(2)}R`;
+function r2(v: number | null | undefined): string {
+  return v == null || !Number.isFinite(v) ? '—' : `${v >= 0 ? '+' : ''}${v.toFixed(2)}R`;
 }
 
-// Merge a trade's docs (thesis < card < position precedence) so the summary can read
-// whatever fields exist without caring which doc carried them.
-function mergedFields(t: LiveTrade): Record<string, unknown> {
-  return { ...(t.thesis ?? {}), ...(t.card ?? {}), ...(t.position ?? {}) };
-}
-
-function Stat({ label, value, alert }: { label: string; value: string; alert?: boolean }) {
+function Stat({ label, value, tone }: { label: string; value: string; tone?: 'good' | 'bad' }) {
+  const color = tone === 'good' ? 'text-emerald-500' : tone === 'bad' ? 'text-red-500' : '';
   return (
     <div className="rounded-xl border border-border bg-surface px-3 py-2">
       <div className="text-[10px] uppercase tracking-wider text-muted">{label}</div>
-      <div className={`text-lg font-semibold ${alert ? 'text-red-500' : ''}`}>{value}</div>
+      <div className={`text-lg font-semibold ${color}`}>{value}</div>
     </div>
   );
 }
 
-function LiveCard({ t }: { t: LiveTrade }) {
-  const f = mergedFields(t);
-  const zone = Array.isArray(f.entry_zone) ? (f.entry_zone as unknown[]).join('–') : undefined;
-  return (
-    <div className="rounded-xl border border-border bg-surface p-3">
-      <div className="flex items-center gap-2">
-        <span className="font-semibold">{t.symbol}</span>
-        <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${STATUS_STYLE[t.status]}`}>{t.status}</span>
-        {typeof f.mode === 'string' && <span className="text-[10px] text-muted">{f.mode}</span>}
-      </div>
-      <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-0.5 text-xs text-muted">
-        {zone && <><dt>zone</dt><dd className="text-right text-fg">₹{zone}</dd></>}
-        {f.entry != null && <><dt>entry</dt><dd className="text-right text-fg">₹{num(f.entry)}</dd></>}
-        {f.stop != null && <><dt>stop</dt><dd className="text-right text-fg">₹{num(f.stop)}</dd></>}
-        {f.T1 != null && <><dt>T1</dt><dd className="text-right text-fg">₹{num(f.T1)}</dd></>}
-        {f.T2 != null && <><dt>T2</dt><dd className="text-right text-fg">₹{num(f.T2)}</dd></>}
-        {f.shares != null && <><dt>shares</dt><dd className="text-right text-fg">{num(f.shares)}</dd></>}
-      </dl>
-      <details className="mt-2">
-        <summary className="cursor-pointer text-[11px] text-muted hover:text-fg">raw docs</summary>
-        <pre className="mt-1 max-h-56 overflow-auto whitespace-pre-wrap rounded-lg bg-surface-2 p-2 text-[10px] text-muted">
-{JSON.stringify({ thesis: t.thesis, card: t.card, position: t.position }, null, 2)}
-        </pre>
-      </details>
-    </div>
-  );
-}
+function AuditCard({ t, monitors, alerts }: { t: Trade; monitors: MonitorRow[]; alerts: AlertRow[] }) {
+  const st = effectiveStatus(t);
+  const c = t.close;
+  const plan = { ...(t.card ?? {}), ...(t.position ?? {}) } as Record<string, any>;
+  const zone = Array.isArray(plan.entry_zone) ? plan.entry_zone.join('–') : undefined;
+  const overridden = t.gates?.overridden ?? [];
+  const followed = overridden.length === 0;
+  const linkedMon = monitors.filter((m) => t.tradeId && m.tradeId === t.tradeId);
+  const linkedAlerts = alerts.filter((a) => t.tradeId && a.tradeId === t.tradeId);
+  const [open, setOpen] = useState(false);
 
-function ClosedCard({ r }: { r: JournalRow }) {
-  const overrides = r.gates_overridden?.length ?? 0;
-  const win = typeof r.realized_R === 'number' && r.realized_R > 0;
   return (
     <div className="rounded-xl border border-border bg-surface p-3">
       <div className="flex items-center gap-2">
-        <span className="font-semibold">{r.symbol}</span>
-        <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${STATUS_STYLE.CLOSED}`}>CLOSED</span>
-        {typeof r.realized_R === 'number' && (
-          <span className={`ml-auto text-sm font-semibold ${win ? 'text-emerald-500' : 'text-red-500'}`}>{r2(r.realized_R)}</span>
+        <span className="font-semibold">{t.symbol ?? t.tradeId}</span>
+        <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${STATUS_STYLE[st]}`}>{st}</span>
+        {st === 'CLOSED' && typeof c?.realized_R === 'number' && (
+          <span className={`ml-auto text-sm font-semibold ${c.realized_R >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>{r2(c.realized_R)}</span>
         )}
       </div>
-      <div className="mt-1 flex flex-wrap gap-x-3 text-xs text-muted">
-        {r.entry != null && <span>entry ₹{num(r.entry)}</span>}
-        {r.exit_price != null && <span>exit ₹{num(r.exit_price)}</span>}
-        {r.hold_days != null && <span>{num(r.hold_days)}d</span>}
-        {r.exit_date && <span>{r.exit_date}</span>}
-      </div>
-      {overrides > 0 && (
-        <p className="mt-1 text-[11px] text-red-500">⚠ {overrides} gate{overrides === 1 ? '' : 's'} overridden — adherence failure</p>
+
+      {/* WHY — the thesis, carried to the close */}
+      {t.thesis?.why && <p className="mt-2 text-xs text-fg"><span className="text-muted">why: </span>{t.thesis.why}</p>}
+
+      {/* PLAN */}
+      {(zone || plan.entry != null || plan.stop != null) && (
+        <div className="mt-1 flex flex-wrap gap-x-3 text-xs text-muted">
+          {zone && <span>zone ₹{zone}</span>}
+          {plan.entry != null && <span>entry ₹{num(plan.entry)}</span>}
+          {plan.stop != null && <span>stop ₹{num(plan.stop)}</span>}
+          {plan.T1 != null && <span>T1 ₹{num(plan.T1)}</span>}
+          {plan.shares != null && <span>{num(plan.shares)} sh</span>}
+        </div>
       )}
-      {r.one_line_lesson && <p className="mt-1 text-[11px] italic text-muted">{r.one_line_lesson}</p>}
+
+      {/* GATES — rules followed or overridden */}
+      <p className={`mt-1 text-[11px] ${followed ? 'text-emerald-500' : 'text-red-500'}`}>
+        {followed ? '✓ rules followed' : `✗ overridden: ${overridden.join(', ')}`}
+      </p>
+
+      {/* CLOSED verdict */}
+      {st === 'CLOSED' && c && (
+        <div className="mt-1 text-[11px] text-muted">
+          {c.exit_price != null && <span>exit ₹{num(c.exit_price)} · </span>}
+          thesis <span className={c.thesis_verdict === 'RIGHT' ? 'text-emerald-500' : c.thesis_verdict === 'WRONG' ? 'text-red-500' : ''}>{c.thesis_verdict ?? '?'}</span>
+          {c.one_line_lesson && <p className="mt-0.5 italic">{c.one_line_lesson}</p>}
+        </div>
+      )}
+
+      {/* LINKS — the audit trail: conversation, monitors, alerts */}
+      <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] text-muted">
+        {t.conversationId && <span className="rounded bg-surface-2 px-1.5 py-0.5">💬 conv {String(t.conversationId).slice(0, 6)}</span>}
+        <span className="rounded bg-surface-2 px-1.5 py-0.5">📡 {linkedMon.length} monitor{linkedMon.length === 1 ? '' : 's'}</span>
+        <span className="rounded bg-surface-2 px-1.5 py-0.5">🔔 {linkedAlerts.length} alert{linkedAlerts.length === 1 ? '' : 's'}</span>
+        <button onClick={() => setOpen((o) => !o)} className="ml-auto hover:text-fg">{open ? 'hide' : 'audit'}</button>
+      </div>
+
+      {open && (
+        <div className="mt-2 space-y-2 border-t border-border/60 pt-2 text-[11px]">
+          {linkedMon.length > 0 && (
+            <div><span className="text-muted">monitors: </span>{linkedMon.map((m) => m.name).join(', ')}</div>
+          )}
+          {linkedAlerts.length > 0 && (
+            <div>
+              <span className="text-muted">alerts:</span>
+              {linkedAlerts.slice(0, 5).map((a) => (
+                <div key={a.id} className="text-muted">· [{(a.severity || '').toUpperCase()}] {a.message}</div>
+              ))}
+            </div>
+          )}
+          <details>
+            <summary className="cursor-pointer text-muted hover:text-fg">raw</summary>
+            <pre className="mt-1 max-h-56 overflow-auto whitespace-pre-wrap rounded-lg bg-surface-2 p-2 text-[10px] text-muted">{JSON.stringify(t, null, 2)}</pre>
+          </details>
+        </div>
+      )}
     </div>
   );
 }
 
-function Column({ title, count, children }: { title: string; count: number; children: React.ReactNode }) {
+function Column({ title, items, monitors, alerts }: { title: string; items: Trade[]; monitors: MonitorRow[]; alerts: AlertRow[] }) {
   return (
     <section className="flex flex-col gap-2">
       <h3 className="flex items-center gap-2 text-xs font-semibold">
         {title}
-        <span className="rounded-full bg-surface-2 px-1.5 text-[10px] text-muted">{count}</span>
+        <span className="rounded-full bg-surface-2 px-1.5 text-[10px] text-muted">{items.length}</span>
       </h3>
-      {count === 0 ? <p className="text-xs text-muted">—</p> : children}
+      {items.length === 0 ? <p className="text-xs text-muted">—</p> : items.map((t) => <AuditCard key={t.id} t={t} monitors={monitors} alerts={alerts} />)}
     </section>
   );
 }
 
 export function TradesTab({ uid }: { uid: string }) {
-  const thesesRaw = useCollection<Record<string, unknown>>(`users/${uid}/theses`);
-  const journal = useCollection<JournalRow>(`users/${uid}/journal`, 'ts', 'desc');
+  const tradesRaw = useCollection<Trade>(`users/${uid}/trades`, 'updatedAt', 'desc');
+  const monitors = useCollection<MonitorRow>(`users/${uid}/monitors`);
+  const alerts = useCollection<AlertRow>(`users/${uid}/alerts`, 'ts', 'desc');
+  const trades = tradesRaw as unknown as Trade[];
 
-  const live = useMemo(() => correlateTrades(thesesRaw as unknown as ThesisDoc[]), [thesesRaw]);
-  const exp = useMemo(() => computeExpectancy(journal as unknown as JournalRow[]), [journal]);
-
-  const open = live.filter((t) => t.status === 'OPEN');
-  const carded = live.filter((t) => t.status === 'CARDED');
-  const watching = live.filter((t) => t.status === 'WATCHING');
+  const audit = useMemo(() => computeAudit(trades), [trades]);
+  const byStatus = (s: TradeStatus) => trades.filter((t) => effectiveStatus(t) === s);
+  const open = byStatus('OPEN');
+  const carded = byStatus('CARDED');
+  const watching = byStatus('WATCHING');
+  const closed = byStatus('CLOSED');
 
   return (
     <div className="mx-auto max-w-6xl p-6">
       <div className="mb-4 flex items-center gap-2">
         <h2 className="text-sm font-semibold">Trades</h2>
-        <span className="text-xs text-muted">the trade lifecycle from your doctrine pipeline · read-only</span>
+        <span className="text-xs text-muted">the trade lifecycle + audit · read-only</span>
       </div>
 
-      {/* Expectancy / adherence — the feedback loop over CLOSED trades */}
+      {/* Scorecard — expectancy split by adherence answers "is the doctrine right?" */}
       <div className="mb-5 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
-        <Stat label="Closed" value={String(exp.closedCount)} />
-        <Stat label="Win rate" value={pct(exp.winRate)} />
-        <Stat label="Expectancy" value={r2(exp.expectancy)} />
-        <Stat label="Avg adherence" value={pct(exp.avgAdherence)} />
-        <Stat label="Gate overrides" value={String(exp.overrides)} alert={exp.overrides > 0} />
+        <Stat label="Closed" value={String(audit.closed)} />
+        <Stat label="Win rate" value={pct(audit.winRate)} />
+        <Stat label="Expectancy · rules followed" value={r2(audit.expAdherent)} tone={audit.expAdherent != null ? (audit.expAdherent >= 0 ? 'good' : 'bad') : undefined} />
+        <Stat label="Expectancy · rule-breaks" value={r2(audit.expRuleBreak)} tone={audit.expRuleBreak != null ? (audit.expRuleBreak >= 0 ? 'good' : 'bad') : undefined} />
+        <Stat label="Gate overrides" value={String(audit.overrides)} tone={audit.overrides > 0 ? 'bad' : undefined} />
       </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <Column title="Open" count={open.length}>{open.map((t) => <LiveCard key={t.symbol} t={t} />)}</Column>
-        <Column title="Carded" count={carded.length}>{carded.map((t) => <LiveCard key={t.symbol} t={t} />)}</Column>
-        <Column title="Watching" count={watching.length}>{watching.map((t) => <LiveCard key={t.symbol} t={t} />)}</Column>
-        <Column title="Closed" count={journal.length}>{journal.map((r) => <ClosedCard key={r.id} r={r as unknown as JournalRow} />)}</Column>
+        <Column title="Open" items={open} monitors={monitors} alerts={alerts} />
+        <Column title="Carded" items={carded} monitors={monitors} alerts={alerts} />
+        <Column title="Watching" items={watching} monitors={monitors} alerts={alerts} />
+        <Column title="Closed" items={closed} monitors={monitors} alerts={alerts} />
       </div>
 
-      {live.length === 0 && journal.length === 0 && (
+      {trades.length === 0 && (
         <p className="mt-6 text-sm text-muted">
-          No trades yet. As the doctrine pipeline runs — a thesis, then a trade card, then a
-          fill, then a close — trades appear here across the four stages.
+          No trades yet. As the pipeline runs — a thesis, a trade card, a fill, a close — each
+          trade appears here with its why, plan, gates, linked monitors/alerts, and (on close)
+          a verdict. "Expectancy · rules followed" is the number that tells you the doctrine works.
         </p>
       )}
     </div>

@@ -43,6 +43,8 @@ export interface Monitor {
   disabled?: boolean;
   /** The conversation this monitor was armed from — used to route fires back into chat. */
   conversationId?: string;
+  /** The trade this monitor watches — the audit spine (ADR 0005). Fires inherit it. */
+  tradeId?: string;
   gates: MonitorGates;
   state?: MonitorState;
 }
@@ -56,6 +58,8 @@ export interface Alert {
   message: string;
   monitorName?: string;
   conversationId?: string;
+  /** The trade this alert belongs to (ADR 0005) — inherited from the firing monitor. */
+  tradeId?: string;
   /** True for a terminal fire (vs a heads-up / blind escalation). */
   terminal?: boolean;
 }
@@ -85,6 +89,73 @@ export interface JournalRecord {
   status?: 'OPEN' | 'CLOSED';
   /** ISO timestamp the record was written — used to order the CLOSED view. */
   ts?: string;
+}
+
+// ── Trade audit spine (ADR 0005) ────────────────────────────────────────────────────
+export type TradeStatus = 'WATCHING' | 'CARDED' | 'OPEN' | 'CLOSED' | 'ABANDONED';
+export type ThesisVerdict = 'RIGHT' | 'WRONG' | 'PARTIAL';
+
+/** The thesis "why" — carried with the trade from WATCHING all the way to CLOSED so the
+ *  audit always shows why we entered next to what happened. */
+export interface TradeThesis {
+  why?: string; // one-line driver
+  archetype?: string;
+  claims?: string[];
+  break_triggers?: string[];
+  [k: string]: unknown;
+}
+export interface TradeCard {
+  mode?: 'DIP' | 'BREAKOUT' | string;
+  entry_zone?: number[];
+  stop?: number;
+  T1?: number;
+  T2?: number;
+  shares?: number;
+  risk_budget?: number;
+  hold_deadline?: string;
+  [k: string]: unknown;
+}
+export interface TradePosition {
+  entry?: number;
+  stop?: number;
+  shares?: number;
+  openedAt?: string;
+  [k: string]: unknown;
+}
+export interface TradeGates {
+  passed?: string[];
+  /** MUST be empty per the standing orders — non-empty = adherence failure. */
+  overridden?: string[];
+}
+export interface TradeClose {
+  exit_price?: number | null;
+  exit_date?: string | null;
+  realized_R?: number | null;
+  hold_days?: number | null;
+  /** Did the driver actually play out? AI proposes, operator confirms (ADR 0005 D3). */
+  thesis_verdict?: ThesisVerdict;
+  /** Were the rules followed? Derived: true iff gates.overridden is empty. */
+  adherent?: boolean;
+  one_line_lesson?: string;
+}
+
+/** A trade — the audit spine. card / position / gates / close accrete as it advances;
+ *  monitors + alerts reference it by `tradeId`; `conversationId` links the chat that
+ *  produced it. journal = trades where status==CLOSED. */
+export interface Trade {
+  tradeId: string;
+  symbol: string;
+  conversationId?: string;
+  status: TradeStatus;
+  /** Standing Order 7 re-entry: a new trade referencing the prior one. */
+  reentryOf?: string;
+  thesis?: TradeThesis;
+  card?: TradeCard;
+  position?: TradePosition;
+  gates?: TradeGates;
+  close?: TradeClose;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface TelegramConfig {
@@ -135,8 +206,13 @@ export interface OverwatchStore {
   appendAlert(alert: Alert): Promise<void>;
   putThesis(id: string, doc: unknown): Promise<void>;
   getThesis(id: string): Promise<unknown | null>;
-  /** Append one closed-trade record. FileStore appends a line to theses/journal.jsonl;
-   *  FirestoreStore adds a doc under users/{uid}/journal. The Trades tab reads these as
-   *  the CLOSED lifecycle stage + the expectancy/adherence feed. */
+  /** Append one closed-trade record. LEGACY — superseded by the trade spine (putTrade
+   *  with status CLOSED, ADR 0005); kept for back-compat. */
   appendJournal(record: JournalRecord): Promise<void>;
+  /** The trade audit spine (ADR 0005). putTrade upsert-MERGES the partial into the
+   *  existing trade (or creates it); the Trades tab reads listTrades() and groups by
+   *  status. journal = trades where status==CLOSED. */
+  putTrade(trade: Trade): Promise<void>;
+  getTrade(tradeId: string): Promise<Trade | null>;
+  listTrades(): Promise<Trade[]>;
 }

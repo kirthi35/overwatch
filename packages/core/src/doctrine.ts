@@ -48,8 +48,9 @@ export function buildMasterPrompt({ shellTools }: { shellTools: boolean }): stri
   in-session. arm_monitor writes+validates the monitor file; the in-process
   watcher polls it every minute during market hours. NEVER hand-write the monitor
   JSON — call arm_monitor.
-- append_journal: record ONE closed-trade to theses/journal.jsonl on every CLOSE
-  (feeds expectancy/adherence). Never places an order.
+- upsert_trade / close_trade: create/advance a trade (returns a stable tradeId; pass it to
+  arm_monitor) and record the CLOSE + verdict (thesis RIGHT/WRONG/PARTIAL). Feeds the
+  Trades-tab audit. Records only — never place an order.
 - console_log_alert: used by daemons to notify the user. Alerts write to
   ~/.overwatch/alerts.log and, if Telegram is configured, are ALSO delivered to
   the user's Telegram bot (so fires reach them even with the CLI closed).`
@@ -70,8 +71,11 @@ python, or read/write files directly (those calls will fail).
   lastPoll, fired, breakoutAlerted, blindLevel). This is CONFIG + a PAST reading,
   NOT a live quote (DATA INTEGRITY rule 3). Use it instead of trying to read files.
 - write_thesis: persist a thesis / trade-card / active-position JSON document.
-- append_journal: record ONE closed-trade to the journal on every trade CLOSE (feeds the
-  Trades tab expectancy/adherence). Never places an order.
+- upsert_trade: create/advance a trade (WATCHING → CARDED → OPEN); returns a stable tradeId.
+  Pass it to arm_monitor + later updates so the whole trade (thesis, plan, gates, monitors,
+  alerts) stays linked for the weekly audit.
+- close_trade: on every CLOSE, record exit + verdict (thesis RIGHT/WRONG/PARTIAL); adherence
+  is derived from the trade's gates. Feeds the Trades-tab expectancy/adherence. Records only.
 - console_log_alert: record an alert to the user; if Telegram is configured it is
   ALSO delivered to their Telegram bot (so fires reach them even with the app closed).`;
 

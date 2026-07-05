@@ -16,10 +16,13 @@ triggers: [journal, log the trade, trade closed, expectancy, win rate, adherence
 line. Every 10 closes, you report whether the system is actually making money and whether it
 is following its own rules. A trade the journal never sees is a lesson lost.
 
-## On every CLOSE — record one journal entry via the `append_journal` tool
-Call `append_journal` with a `record` object (do NOT hand-write the file). The tool is
-environment-agnostic: on the CLI it appends to `theses/journal.jsonl`; on the multi-tenant
-server it writes `users/{uid}/journal` (no shell needed). Fields:
+## On every CLOSE — record the verdict via the `close_trade` tool
+Call `close_trade` with the trade's `tradeId` (do NOT hand-write files). It sets the trade
+CLOSED and records the audit verdict — **`thesis_verdict`** (RIGHT | WRONG | PARTIAL: did the
+driver actually play out — you propose it from price + driver evidence, the operator confirms)
+— while **adherence** ("rules followed?") is derived from the trade's own gates. This is the
+feedback loop the weekly audit reads (`close_trade` fields: exit_price, exit_date, realized_R,
+hold_days, thesis_verdict, one_line_lesson). The underlying record still holds these fields:
 ```
 symbol, entry_date, exit_date, entry, stop_initial, stop_final, exit_price, shares,
 planned_R (from the pre-trade card), realized_R, hold_days, mode (DIP|BREAKOUT),

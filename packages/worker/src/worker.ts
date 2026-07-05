@@ -203,6 +203,7 @@ export class MonitorWorker {
         message,
         monitorName: e.monitor.name,
         conversationId: e.monitor.conversationId,
+        tradeId: e.monitor.tradeId,
         terminal,
       });
     } catch (err: any) {

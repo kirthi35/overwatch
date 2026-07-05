@@ -41,6 +41,15 @@ export type {
   Alert,
   AlertSeverity,
   JournalRecord,
+  Trade,
+  TradeStatus,
+  ThesisVerdict,
+  TradeThesis,
+  TradeCard,
+  TradePosition,
+  TradeGates,
+  TradeClose,
   TelegramConfig,
   OllamaConfig,
 } from './types.js';
+export { isAdherent, effectiveStatus, mergeTrade, assertTradeConsistent } from './trade.js';

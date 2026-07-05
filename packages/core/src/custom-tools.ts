@@ -1,7 +1,8 @@
 import { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { Type } from '@sinclair/typebox';
 import { notifyTelegram } from './telegram.js';
-import { UserContext, Monitor, AlertSeverity, JournalRecord } from './types.js';
+import { UserContext, Monitor, AlertSeverity, JournalRecord, Trade } from './types.js';
+import { mergeTrade, isAdherent, assertTradeConsistent } from './trade.js';
 
 // Custom (non-Groww) tools, parameterized by UserContext so each agent session
 // writes to that user's own store (FileStore for the CLI, FirestoreStore for the
@@ -52,6 +53,7 @@ export function registerCustomTools(api: ExtensionAPI, u: UserContext) {
       time_gate_ist: Type.Optional(Type.Number({ description: "IST HHMM; don't evaluate before this (e.g. 935 to skip opening noise). Omit for none." })),
       candle_interval: Type.Optional(Type.Number({ description: 'Candle interval in minutes for the green-candle check (e.g. 15). Required if gates.require_green_candle is set.' })),
       mode: Type.Optional(Type.String({ description: "'in-session' (default) or 'daemon' (a bespoke daemon owns it; the shared poller skips it)." })),
+      tradeId: Type.Optional(Type.String({ description: 'The trade this monitor watches (from upsert_trade). Links the monitor + its fired alerts to that trade for the weekly audit (ADR 0005).' })),
       gates: Type.Object({
         stop_below: Type.Optional(Type.Number({ description: 'LTP under this -> CRITICAL, terminal (invalidation).' })),
         zone: Type.Optional(Type.Array(Type.Number(), { description: '[lo, hi] entry zone. LTP inside + green (if required) + book under cap -> CRITICAL, terminal.' })),
@@ -83,6 +85,7 @@ export function registerCustomTools(api: ExtensionAPI, u: UserContext) {
       if (args.time_gate_ist !== undefined) monitor.time_gate_ist = args.time_gate_ist;
       if (args.candle_interval !== undefined) monitor.candle_interval = args.candle_interval;
       if (u.conversationId) monitor.conversationId = u.conversationId;
+      if (args.tradeId) monitor.tradeId = args.tradeId;
 
       try {
         await u.store.putMonitor(monitor.name, monitor);
@@ -261,6 +264,97 @@ export function registerCustomTools(api: ExtensionAPI, u: UserContext) {
         return { content: [{ type: 'text', text: `Recorded journal entry for '${symbol}'.` }], details: { written: true, symbol: symbol as string | undefined } };
       } catch (e: any) {
         return { content: [{ type: 'text', text: `append_journal: failed — ${e.message}` }], details: { written: false, symbol: undefined as string | undefined } };
+      }
+    },
+  });
+
+  // upsert_trade — create or advance a trade (the audit spine, ADR 0005). Mints a stable
+  // tradeId on first write, stamps the conversation, carries thesis/card/position/gates.
+  // Pass the SAME tradeId to arm_monitor + later updates so the whole trade stays linked.
+  api.registerTool({
+    name: 'upsert_trade',
+    label: 'Upsert Trade',
+    description:
+      'Create or advance a trade record — the audit spine. Call as it moves through the ' +
+      'lifecycle: WATCHING (thesis) → CARDED (card) → OPEN (position). Returns a stable tradeId; ' +
+      'pass it back on later calls AND to arm_monitor so the whole trade — thesis, plan, gates, ' +
+      'monitors, alerts — stays linked for the weekly audit. Records only — never places an order.',
+    parameters: Type.Object({
+      tradeId: Type.Optional(Type.String({ description: 'Existing trade id to advance. Omit to create a new trade.' })),
+      symbol: Type.String({ description: "Ticker (e.g. 'PARAS')." }),
+      status: Type.Optional(Type.String({ description: 'WATCHING | CARDED | OPEN | ABANDONED. Defaults WATCHING on create. OPEN requires position; use close_trade to close.' })),
+      reentryOf: Type.Optional(Type.String({ description: 'Prior tradeId this re-entry follows (Standing Order 7).' })),
+      thesis: Type.Optional(Type.Any({ description: 'Thesis "why": {why, archetype, claims[], break_triggers[]}. Carried to the close.' })),
+      card: Type.Optional(Type.Any({ description: 'Trade card: {mode, entry_zone:[lo,hi], stop, T1, T2, shares, risk_budget, hold_deadline}.' })),
+      position: Type.Optional(Type.Any({ description: 'Open position: {entry, stop, shares}. Set with status OPEN.' })),
+      gates: Type.Optional(Type.Any({ description: 'Gates: {passed:[...], overridden:[...]}. overridden MUST be empty per the standing orders.' })),
+    }),
+    execute: async (_toolCallId, args: any) => {
+      try {
+        const tradeId = args.tradeId || `${(args.symbol || 'trade').toString().trim().toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${Date.now().toString(36)}`;
+        const prev = args.tradeId ? ((await u.store.getTrade(tradeId)) as Trade | null) : null;
+        const now = new Date().toISOString();
+        const patch: any = { tradeId, symbol: args.symbol };
+        if (args.status) patch.status = String(args.status).toUpperCase();
+        if (args.reentryOf) patch.reentryOf = args.reentryOf;
+        for (const k of ['thesis', 'card', 'position', 'gates'] as const) {
+          if (args[k] && typeof args[k] === 'object') patch[k] = args[k];
+        }
+        const merged = mergeTrade(prev, patch);
+        if (!merged.status) merged.status = 'WATCHING';
+        if (u.conversationId && !merged.conversationId) merged.conversationId = u.conversationId;
+        merged.createdAt = prev?.createdAt || now;
+        merged.updatedAt = now;
+        assertTradeConsistent(merged);
+        await u.store.putTrade(merged);
+        return { content: [{ type: 'text', text: `Trade ${tradeId} (${merged.symbol}) → ${merged.status}. Reuse tradeId "${tradeId}" for arm_monitor + later updates.` }], details: { tradeId: tradeId as string | undefined, status: merged.status as string | undefined } };
+      } catch (e: any) {
+        return { content: [{ type: 'text', text: `upsert_trade: failed — ${e.message}` }], details: { tradeId: undefined as string | undefined, status: undefined as string | undefined } };
+      }
+    },
+  });
+
+  // close_trade — record a CLOSE + the audit verdict (ADR 0005). thesis_verdict is the
+  // operator-confirmed judgment; `adherent` is derived from the trade's own gates.
+  api.registerTool({
+    name: 'close_trade',
+    label: 'Close Trade',
+    description:
+      'Record a trade CLOSE + the audit verdict on every exit (stop, target, time-stop, or ' +
+      'manual). Sets status CLOSED. thesis_verdict (RIGHT|WRONG|PARTIAL) = did the driver play ' +
+      'out (operator-confirmed). "Rules followed?" is derived from the trade\'s gates. This is ' +
+      'the feedback loop the weekly audit reads. Records only — never places an order.',
+    parameters: Type.Object({
+      tradeId: Type.String({ description: 'The trade to close (from upsert_trade).' }),
+      exit_price: Type.Optional(Type.Number({ description: 'Exit price.' })),
+      exit_date: Type.Optional(Type.String({ description: 'Exit date (YYYY-MM-DD).' })),
+      realized_R: Type.Optional(Type.Number({ description: 'Realized R = (exit − entry) ÷ (entry − initial stop).' })),
+      hold_days: Type.Optional(Type.Number({ description: 'Days held.' })),
+      thesis_verdict: Type.Optional(Type.String({ description: 'RIGHT | WRONG | PARTIAL — did the driver actually play out (operator-confirmed).' })),
+      one_line_lesson: Type.Optional(Type.String({ description: 'The takeaway.' })),
+    }),
+    execute: async (_toolCallId, args: any) => {
+      try {
+        const prev = (await u.store.getTrade(args.tradeId)) as Trade | null;
+        if (!prev) {
+          return { content: [{ type: 'text', text: `close_trade: no trade "${args.tradeId}". Create it with upsert_trade first.` }], details: { closed: false, adherent: undefined as boolean | undefined } };
+        }
+        const close: any = {};
+        if (args.exit_price !== undefined) close.exit_price = args.exit_price;
+        if (args.exit_date !== undefined) close.exit_date = args.exit_date;
+        if (args.realized_R !== undefined) close.realized_R = args.realized_R;
+        if (args.hold_days !== undefined) close.hold_days = args.hold_days;
+        if (args.thesis_verdict) close.thesis_verdict = String(args.thesis_verdict).toUpperCase();
+        if (args.one_line_lesson) close.one_line_lesson = args.one_line_lesson;
+        close.adherent = isAdherent(prev.gates);
+        const merged = mergeTrade(prev, { tradeId: args.tradeId, status: 'CLOSED', close });
+        merged.updatedAt = new Date().toISOString();
+        assertTradeConsistent(merged);
+        await u.store.putTrade(merged);
+        const adh = close.adherent ? 'rules FOLLOWED' : 'rules OVERRIDDEN (adherence failure)';
+        return { content: [{ type: 'text', text: `Closed ${merged.symbol} — ${args.realized_R != null ? args.realized_R + 'R, ' : ''}thesis ${close.thesis_verdict || '?'}, ${adh}.` }], details: { closed: true, adherent: close.adherent as boolean | undefined } };
+      } catch (e: any) {
+        return { content: [{ type: 'text', text: `close_trade: failed — ${e.message}` }], details: { closed: false, adherent: undefined as boolean | undefined } };
       }
     },
   });

@@ -2,6 +2,9 @@
 
 **Status:** Accepted (2026-07-05) · **Branch:** `feat/web-app-monorepo`
 **Reviewed via:** `/plan-eng-review` + independent adversarial review (repo-verified)
+**Superseded in part by [ADR 0005]** — the audit needs a stable **trade-id spine**, which
+replaces this ADR's *symbol-correlation* linking (D1). The read-and-correlate reader is now a
+`trades`-collection reader; the rest of ADR 0004 (read-only, no order placement) still holds.
 
 ## Context
 

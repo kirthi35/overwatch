@@ -18,7 +18,9 @@ frozen. The market does not get to renegotiate it and neither does the operator'
 card is the contract; the fill must honor it.
 
 ## Before entry-exit-gate may output ENTER
-A card must exist at `theses/<symbol>-card.json`:
+Commit the card via the **`upsert_trade` tool** (`status: "CARDED"`, `card: {…}`). It mints a
+stable **`tradeId`** — carry it to entry-exit-gate and to `arm_monitor` so the whole trade
+(thesis → card → fill → close) stays linked for the weekly audit (ADR 0005). Card fields:
 ```json
 {
   "symbol": "<SYM>", "mode": "DIP|BREAKOUT",
