@@ -15,7 +15,7 @@ import {
   type AlertSeverity,
   type TelegramConfig,
 } from '@overwatch/core';
-import { SecretsStore, FirestoreStore } from '@overwatch/server';
+import { SecretsStore, FirestoreStore, DEV_CREDS_ENABLED, loadDotenv } from '@overwatch/server';
 
 const TICK_MS = 60000;
 const HEARTBEAT_MS = 150000; // ~2.5 min: throttled state flush for the UI "last polled" label
@@ -42,6 +42,12 @@ export class MonitorWorker {
   private timer?: ReturnType<typeof setInterval>;
   private unsub?: () => void;
   private readonly O: WatchdogOpts = DEFAULT_WATCHDOG;
+  // DEV single-operator fallback: when OVERWATCH_DEV_CREDS_FROM_ENV=1 and a user has no
+  // stored BYOK creds, poll with the shared .env Groww token — the SAME fallback the server
+  // uses to arm monitors. Without this the monitors arm but the worker can't poll them, so
+  // every cycle goes blind → CRITICAL "no Groww token for user" (§24).
+  private readonly devToken: string | undefined =
+    DEV_CREDS_ENABLED() ? (process.env.GROWW_API_TOKEN || loadDotenv().groww_api_key || undefined) : undefined;
 
   // opts.alwaysOpen bypasses the NSE-hours gate — for tests/verification off-hours.
   constructor(private readonly db: Firestore, private readonly opts: { alwaysOpen?: boolean } = {}) {}
@@ -118,6 +124,7 @@ export class MonitorWorker {
     } catch {
       token = undefined;
     }
+    if (!token) token = this.devToken; // dev single-operator fallback (§24) — shared .env token
     if (!token) {
       for (const e of entries) await this.applyFailure(e, 'no Groww token for user');
       return;
