@@ -3,7 +3,7 @@ import type { User } from 'firebase/auth';
 import { AssistantRuntimeProvider, useLocalRuntime, ThreadPrimitive, ComposerPrimitive, MessagePrimitive, ActionBarPrimitive, useMessagePartText, type ThreadMessageLike } from '@assistant-ui/react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Flame, MessageSquare, Radar, Bell, Settings as SettingsIcon, Sun, Moon, Plus, Trash2, LogOut, ArrowUp, Copy, Check, LineChart, Square } from 'lucide-react';
+import { Flame, MessageSquare, Radar, Bell, Settings as SettingsIcon, Sun, Moon, Plus, Trash2, LogOut, ArrowUp, Copy, Check, LineChart, Square, Menu } from 'lucide-react';
 import { onAuthChange, signInGoogle, signInEmail, registerEmail, signOutUser, auth } from './firebase';
 import { listModels, createConversation, deleteConversation, type ModelInfo } from './lib/api';
 import { makeChatAdapter } from './lib/runtime';
@@ -90,44 +90,8 @@ function MainApp() {
   }, []);
 
   return (
-    <div className="flex h-full bg-bg text-fg">
-      {/* Nav rail */}
-      <aside className="flex w-[220px] shrink-0 flex-col border-r border-border bg-surface">
-        <div className="flex items-center gap-2 px-4 py-4">
-          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-accent-fg"><Flame size={17} /></span>
-          <span className="text-[15px] font-semibold tracking-tight">Overwatch</span>
-        </div>
-        <div className="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-muted">Menu</div>
-        <nav className="flex flex-col gap-0.5 px-2">
-          {NAV.map((n) => (
-            <button
-              key={n.id}
-              onClick={() => setTab(n.id)}
-              className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
-                tab === n.id ? 'bg-[var(--accent-soft)] font-medium text-accent' : 'text-muted hover:bg-surface-2 hover:text-fg'
-              }`}
-            >
-              {n.icon}
-              {n.label}
-            </button>
-          ))}
-        </nav>
-        <div className="mt-auto space-y-2 p-3">
-          <button onClick={toggle} className="flex w-full items-center justify-center gap-2 rounded-lg border border-border bg-surface-2 py-2 text-xs text-muted hover:text-fg">
-            {dark ? <Sun size={14} /> : <Moon size={14} />}
-            {dark ? 'Light mode' : 'Dark mode'}
-          </button>
-          <div className="flex items-center gap-2 rounded-lg px-2 py-1.5">
-            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent text-[11px] font-semibold text-accent-fg">
-              {(auth.currentUser?.email ?? '?')[0]?.toUpperCase()}
-            </span>
-            <span className="min-w-0 flex-1 truncate text-xs text-muted">{auth.currentUser?.email}</span>
-            <button onClick={() => signOutUser()} title="Sign out" className="text-muted hover:text-fg"><LogOut size={15} /></button>
-          </div>
-        </div>
-      </aside>
-
-      {/* Main */}
+    <div className="flex h-full flex-col bg-bg text-fg">
+      <TopBar tab={tab} setTab={setTab} dark={dark} toggle={toggle} />
       <main className="min-h-0 min-w-0 flex-1">
         {onboarded === null && <Centered>Checking configuration…</Centered>}
         {onboarded === false && <Centered>No LLM key found. Set ANTHROPIC_API_KEY or OLLAMA_API_KEY in .env and restart the server.</Centered>}
@@ -141,12 +105,48 @@ function MainApp() {
   );
 }
 
+// Top navbar: logo · horizontal tabs (icon-only on mobile, +label on md) · theme · account.
+// Tabs scroll horizontally if the viewport is very narrow.
+function TopBar({ tab, setTab, dark, toggle }: { tab: Tab; setTab: (t: Tab) => void; dark: boolean; toggle: () => void }) {
+  const email = auth.currentUser?.email ?? '?';
+  return (
+    <header className="flex shrink-0 items-center gap-1 border-b border-border bg-surface px-2 py-1.5 sm:px-3">
+      <span className="mr-1 flex shrink-0 items-center gap-2 pl-1">
+        <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-accent text-accent-fg"><Flame size={15} /></span>
+        <span className="hidden text-[15px] font-semibold tracking-tight sm:inline">Overwatch</span>
+      </span>
+      <nav className="flex flex-1 items-center gap-0.5 overflow-x-auto">
+        {NAV.map((n) => (
+          <button
+            key={n.id}
+            onClick={() => setTab(n.id)}
+            title={n.label}
+            className={`flex shrink-0 items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm transition-colors ${
+              tab === n.id ? 'bg-[var(--accent-soft)] font-medium text-accent' : 'text-muted hover:bg-surface-2 hover:text-fg'
+            }`}
+          >
+            {n.icon}
+            <span className="hidden md:inline">{n.label}</span>
+          </button>
+        ))}
+      </nav>
+      <button onClick={toggle} title={dark ? 'Light mode' : 'Dark mode'} className="shrink-0 rounded-lg p-2 text-muted hover:bg-surface-2 hover:text-fg">
+        {dark ? <Sun size={15} /> : <Moon size={15} />}
+      </button>
+      <span className="ml-1 hidden max-w-[180px] truncate text-xs text-muted lg:inline">{email}</span>
+      <span className="ml-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent text-[11px] font-semibold text-accent-fg lg:hidden" title={email}>{email[0]?.toUpperCase()}</span>
+      <button onClick={() => signOutUser()} title="Sign out" className="shrink-0 rounded-lg p-2 text-muted hover:bg-surface-2 hover:text-fg"><LogOut size={15} /></button>
+    </header>
+  );
+}
+
 interface Convo { id: string; title?: string; updatedAt?: string }
 
 function ChatArea({ uid }: { uid: string }) {
   const convos = useCollection<Convo>(`users/${uid}/conversations`, 'updatedAt', 'desc');
   const [activeCid, setActiveCid] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [drawer, setDrawer] = useState(false); // mobile conversation drawer
 
   useEffect(() => {
     if (!activeCid && convos.length > 0) setActiveCid(convos[0].id);
@@ -163,9 +163,16 @@ function ChatArea({ uid }: { uid: string }) {
     }
   };
 
+  const activeTitle = convos.find((c) => c.id === activeCid)?.title || 'New chat';
+
   return (
-    <div className="flex h-full">
-      <aside className="flex w-64 shrink-0 flex-col border-r border-border bg-surface/50">
+    <div className="relative flex h-full">
+      {/* Conversation list — static column on md+, slide-in drawer on mobile. */}
+      <aside
+        className={`absolute inset-y-0 left-0 z-20 flex w-64 shrink-0 flex-col border-r border-border bg-surface transition-transform md:static md:z-auto md:translate-x-0 ${
+          drawer ? 'translate-x-0 shadow-xl' : '-translate-x-full'
+        }`}
+      >
         <div className="p-3">
           <button onClick={newChat} disabled={creating} className="flex w-full items-center justify-center gap-2 rounded-xl bg-accent py-2.5 text-sm font-semibold text-accent-fg hover:opacity-90 disabled:opacity-50">
             <Plus size={16} /> New chat
@@ -175,7 +182,7 @@ function ChatArea({ uid }: { uid: string }) {
           {convos.length === 0 && <p className="px-2 py-2 text-xs text-muted">No conversations yet.</p>}
           {convos.map((c) => (
             <div key={c.id} className={`group flex items-center rounded-lg ${activeCid === c.id ? 'bg-surface-2' : 'hover:bg-surface-2/60'}`}>
-              <button onClick={() => setActiveCid(c.id)} className="min-w-0 flex-1 px-3 py-2 text-left">
+              <button onClick={() => { setActiveCid(c.id); setDrawer(false); }} className="min-w-0 flex-1 px-3 py-2 text-left">
                 <div className="truncate text-sm">{c.title || 'New chat'}</div>
                 <div className="text-[10px] text-muted">{c.updatedAt ? new Date(c.updatedAt).toLocaleDateString() : ''}</div>
               </button>
@@ -190,8 +197,19 @@ function ChatArea({ uid }: { uid: string }) {
           ))}
         </div>
       </aside>
-      <div className="min-w-0 flex-1">
-        {activeCid ? <ChatThread key={activeCid} cid={activeCid} uid={uid} /> : <Centered>Start a new chat.</Centered>}
+      {/* Mobile backdrop when the drawer is open. */}
+      {drawer && <div onClick={() => setDrawer(false)} className="fixed inset-0 z-10 bg-black/40 md:hidden" />}
+
+      <div className="flex min-w-0 flex-1 flex-col">
+        {/* Mobile chat header: open conversations drawer + new chat. */}
+        <div className="flex items-center gap-2 border-b border-border px-3 py-2 md:hidden">
+          <button onClick={() => setDrawer(true)} title="Conversations" className="rounded-lg p-1.5 text-muted hover:bg-surface-2"><Menu size={18} /></button>
+          <span className="min-w-0 flex-1 truncate text-sm font-medium">{activeTitle}</span>
+          <button onClick={newChat} title="New chat" className="rounded-lg p-1.5 text-muted hover:bg-surface-2"><Plus size={18} /></button>
+        </div>
+        <div className="min-h-0 flex-1">
+          {activeCid ? <ChatThread key={activeCid} cid={activeCid} uid={uid} /> : <Centered>Start a new chat.</Centered>}
+        </div>
       </div>
     </div>
   );

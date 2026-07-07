@@ -46,7 +46,7 @@ export function MonitorsTab({ uid }: { uid: string }) {
 
   return (
     <div className="flex h-full">
-      <div className="w-96 shrink-0 overflow-y-auto border-r border-border">
+      <div className={`w-full shrink-0 overflow-y-auto border-r border-border md:w-96 ${selId ? 'hidden md:block' : 'block'}`}>
         <div className="border-b border-border px-4 py-3 text-sm font-semibold">Monitors</div>
         {monitors.length === 0 && <p className="p-4 text-sm text-muted">No monitors armed. Ask in chat: “watch PARAS, alert if it breaks 1075”.</p>}
         {monitors.map((m) => {
@@ -62,8 +62,9 @@ export function MonitorsTab({ uid }: { uid: string }) {
           );
         })}
       </div>
-      <div className="min-w-0 flex-1 overflow-y-auto p-6">
-        {!selected ? <p className="text-sm text-muted">Select a monitor.</p> : <MonitorDetail uid={uid} m={selected} />}
+      <div className={`min-w-0 flex-1 overflow-y-auto p-4 sm:p-6 ${selId ? 'block' : 'hidden md:block'}`}>
+        <button onClick={() => setSelId(null)} className="mb-3 text-xs text-muted hover:text-fg md:hidden">← Monitors</button>
+        {!selected ? <p className="hidden text-sm text-muted md:block">Select a monitor.</p> : <MonitorDetail uid={uid} m={selected} />}
       </div>
     </div>
   );
