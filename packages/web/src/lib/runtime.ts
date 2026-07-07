@@ -42,42 +42,28 @@ export function makeChatAdapter(cid: string): ChatModelAdapter {
         // 3. read SSE frames. Build content = accumulated text + tool-call parts, so
         // assistant-ui renders both the prose and inline tool cards.
         let buf = '';
-        // Render parts in the ORDER the model produced them (Pi's message.content already
-        // interleaves text ↔ tool-call), so a tool call shows inline where it happened —
-        // not dumped after all the prose. `started`/`results` enrich by toolCallId and act
-        // as a fallback if a tool arrives only via execution events (never render at the end
-        // of the message when content carried it in the right place).
-        let lastContent: any[] = [];
+        // Interleave text ↔ tool-calls by EVENT ORDER (works for GLM/OpenAI too, where tool
+        // calls are NOT part of message.content). Each tool is stamped with the assistant
+        // text length at the moment it fired (`at`); build() slices the text around those
+        // marks. A data-fetch tool that fires before any prose lands before it — not at the end.
+        let fullText = ''; // accumulated ASSISTANT text only (role-guarded → fixes the echo)
         let errText = '';
-        const started = new Map<string, { toolName: string; args: unknown }>();
+        const startedIds = new Set<string>();
+        const toolMarks: { id: string; toolName: string; args: unknown; at: number }[] = [];
         const results = new Map<string, { result?: unknown; isError?: boolean }>();
-        const TOOL_TYPES = new Set(['tool_use', 'toolCall', 'tool-call', 'toolUse', 'tool_call']);
-        const isTool = (p: any) => p && typeof p === 'object' && TOOL_TYPES.has(p.type);
-        const setContent = (content: unknown) => {
-          if (Array.isArray(content)) lastContent = content as any[];
-          else if (typeof content === 'string') lastContent = content ? [{ type: 'text', text: content }] : [];
-        };
         const build = (): any[] => {
           const parts: any[] = [];
-          const rendered = new Set<string>();
-          for (const p of lastContent) {
-            if (!p || typeof p !== 'object') continue;
-            if (p.type === 'text') {
-              if (p.text) parts.push({ type: 'text', text: p.text });
-            } else if (isTool(p)) {
-              const id = p.toolCallId ?? p.id ?? '';
-              const r = results.get(id) ?? {};
-              parts.push({ type: 'tool-call', toolCallId: id, toolName: p.toolName ?? p.name ?? 'tool', args: p.args ?? p.arguments ?? p.input ?? {}, result: r.result, isError: r.isError });
-              if (id) rendered.add(id);
-            }
+          let cursor = 0;
+          for (const m of toolMarks) {
+            const seg = fullText.slice(cursor, m.at);
+            if (seg) parts.push({ type: 'text', text: seg });
+            const r = results.get(m.id) ?? {};
+            parts.push({ type: 'tool-call', toolCallId: m.id, toolName: m.toolName, args: m.args ?? {}, result: r.result, isError: r.isError });
+            cursor = Math.max(cursor, m.at);
           }
-          // Fallback only: tools seen via execution events but absent from message.content.
-          for (const [id, t] of started) {
-            if (rendered.has(id)) continue;
-            const r = results.get(id) ?? {};
-            parts.push({ type: 'tool-call', toolCallId: id, toolName: t.toolName, args: t.args ?? {}, result: r.result, isError: r.isError });
-          }
-          if (errText && !parts.some((p) => p.type === 'text')) parts.push({ type: 'text', text: errText });
+          const tail = fullText.slice(cursor);
+          if (tail) parts.push({ type: 'text', text: tail });
+          if (!parts.length && errText) parts.push({ type: 'text', text: errText });
           return parts;
         };
         while (true) {
@@ -97,14 +83,24 @@ export function makeChatAdapter(cid: string): ChatModelAdapter {
               continue;
             }
             if (evt.type === 'message_update' || evt.type === 'message_end') {
-              setContent(evt.message?.content);
+              // Only the ASSISTANT's own text belongs in this bubble. The stream also
+              // replays the user turn (role 'user'); ignoring it fixes the echo where the
+              // bubble first showed the just-typed prompt.
+              const role = evt.message?.role;
+              if (role === undefined || role === 'assistant') {
+                fullText = partsToText(evt.message?.content) || fullText;
+              }
               if (evt.type === 'message_end' && evt.message?.stopReason === 'error') {
                 errText = `⚠️ ${evt.message?.errorMessage ?? 'model error'}`;
               }
               const parts = build();
               if (parts.length) yield { content: parts };
             } else if (evt.type === 'tool_execution_start') {
-              started.set(evt.toolCallId, { toolName: evt.toolName, args: evt.args });
+              // Stamp the tool at the current text length so build() places it where it fired.
+              if (!startedIds.has(evt.toolCallId)) {
+                startedIds.add(evt.toolCallId);
+                toolMarks.push({ id: evt.toolCallId, toolName: evt.toolName, args: evt.args, at: fullText.length });
+              }
               const parts = build();
               if (parts.length) yield { content: parts };
             } else if (evt.type === 'tool_execution_end') {
