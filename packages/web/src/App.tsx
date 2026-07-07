@@ -3,7 +3,7 @@ import type { User } from 'firebase/auth';
 import { AssistantRuntimeProvider, useLocalRuntime, ThreadPrimitive, ComposerPrimitive, MessagePrimitive, ActionBarPrimitive, useMessagePartText, type ThreadMessageLike } from '@assistant-ui/react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Flame, MessageSquare, Radar, Bell, Settings as SettingsIcon, Sun, Moon, Plus, Trash2, LogOut, ArrowUp, Copy, Check, LineChart, Square, Menu } from 'lucide-react';
+import { Flame, MessageSquare, Radar, Bell, Settings as SettingsIcon, Sun, Moon, Plus, Trash2, LogOut, ArrowUp, Copy, Check, LineChart, Square, Menu, Search } from 'lucide-react';
 import { onAuthChange, signInGoogle, signInEmail, registerEmail, signOutUser, auth } from './firebase';
 import { listModels, createConversation, deleteConversation, type ModelInfo } from './lib/api';
 import { makeChatAdapter } from './lib/runtime';
@@ -149,6 +149,7 @@ function ChatArea({ uid, openCid }: { uid: string; openCid?: string | null }) {
   const [activeCid, setActiveCid] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [drawer, setDrawer] = useState(false); // mobile conversation drawer
+  const [q, setQ] = useState(''); // conversation search
 
   useEffect(() => {
     if (!activeCid && convos.length > 0) setActiveCid(convos[0].id);
@@ -171,6 +172,7 @@ function ChatArea({ uid, openCid }: { uid: string; openCid?: string | null }) {
   };
 
   const activeTitle = convos.find((c) => c.id === activeCid)?.title || 'New chat';
+  const shown = q.trim() ? convos.filter((c) => (c.title || 'New chat').toLowerCase().includes(q.trim().toLowerCase())) : convos;
 
   return (
     <div className="relative flex h-full">
@@ -180,14 +182,22 @@ function ChatArea({ uid, openCid }: { uid: string; openCid?: string | null }) {
           drawer ? 'translate-x-0 shadow-xl' : '-translate-x-full'
         }`}
       >
-        <div className="p-3">
+        <div className="p-3 pb-2">
           <button onClick={newChat} disabled={creating} className="flex w-full items-center justify-center gap-2 rounded-xl bg-accent py-2.5 text-sm font-semibold text-accent-fg hover:opacity-90 disabled:opacity-50">
             <Plus size={16} /> New chat
           </button>
         </div>
+        <div className="px-3 pb-2">
+          <div className="flex items-center gap-2 rounded-lg border border-border bg-bg px-2.5 py-1.5 focus-within:border-accent">
+            <Search size={14} className="shrink-0 text-muted" />
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search chats…" className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted" />
+            {q && <button onClick={() => setQ('')} className="shrink-0 text-muted hover:text-fg" title="Clear">✕</button>}
+          </div>
+        </div>
         <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
           {convos.length === 0 && <p className="px-2 py-2 text-xs text-muted">No conversations yet.</p>}
-          {convos.map((c) => (
+          {convos.length > 0 && shown.length === 0 && <p className="px-2 py-2 text-xs text-muted">No chats match “{q}”.</p>}
+          {shown.map((c) => (
             <div key={c.id} className={`group flex items-center rounded-lg ${activeCid === c.id ? 'bg-surface-2' : 'hover:bg-surface-2/60'}`}>
               <button onClick={() => { setActiveCid(c.id); setDrawer(false); }} className="min-w-0 flex-1 px-3 py-2 text-left">
                 <div className="truncate text-sm">{c.title || 'New chat'}</div>
