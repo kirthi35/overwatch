@@ -62,7 +62,7 @@ export interface GateFire {
 export function evaluateGates(monitor: Monitor, ltp: number, ratio: number, green: boolean): GateFire | null {
   const g = monitor.gates || {};
   if (typeof g.stop_below === 'number' && ltp < g.stop_below) {
-    return { severity: 'CRITICAL', terminal: true, message: `broke below stop ${g.stop_below} (LTP ${ltp}). Thesis invalidated — stand down.` };
+    return { severity: 'CRITICAL', terminal: true, message: `Dropped below your stop of ₹${g.stop_below} (now ₹${ltp}). The reason to own it is broken — best to step aside.` };
   }
   if (Array.isArray(g.zone)) {
     const [lo, hi] = g.zone;
@@ -73,7 +73,7 @@ export function evaluateGates(monitor: Monitor, ltp: number, ratio: number, gree
       return {
         severity: 'CRITICAL',
         terminal: true,
-        message: `ENTRY GATE MET — LTP ${ltp} in zone [${lo}-${hi}], green:${green}, book ${ratio.toFixed(2)}:1. Confirm on daily close, then run the live risk gate before any entry.`,
+        message: `Reached your buy zone ₹${lo}–${hi} (now ₹${ltp})${green ? ', on a green candle' : ''}, and the order book looks clean. Looks like a spot to buy — confirm on the daily close before you do.`,
       };
     }
   }
@@ -81,7 +81,7 @@ export function evaluateGates(monitor: Monitor, ltp: number, ratio: number, gree
     return {
       severity: 'WARNING',
       terminal: false,
-      message: `reclaimed ${g.breakout_above} (LTP ${ltp}) — breakout heads-up. Lower quality; confirm daily close. Not a confirmed entry.`,
+      message: `Pushed above ₹${g.breakout_above} (now ₹${ltp}) — a breakout heads-up, not a confirmed buy yet. Wait for the daily close.`,
     };
   }
   return null;
@@ -105,15 +105,15 @@ export function fail(state: MonitorState, errMsg: string, O: WatchdogOpts, label
   let alert: WatchdogAlert | null = null;
 
   if (n === O.MAX_FAILS_WARN) {
-    alert = { severity: 'WARNING', message: `${label} monitor BLIND — ${n} consecutive MCP failures (${errMsg}). Not evaluating gates. Check Groww backend / token. CHECK THE POSITION MANUALLY IN GROWW.` };
+    alert = { severity: 'WARNING', message: `Can't see ${label}'s live price right now — I've paused watching it. Keep an eye on it in Groww yourself. (${errMsg})` };
     s.blindLevel = 'WARNING';
     s.lastAlertedFail = n;
   } else if (n === O.MAX_FAILS_CRIT) {
-    alert = { severity: 'CRITICAL', message: `${label} monitor STILL BLIND after ${n} failures (~${Math.round((n * O.BACKOFF_MS) / 60000)} min). The monitor CANNOT see price — it will miss stops/triggers. WATCH THIS POSITION YOURSELF IN GROWW NOW.` };
+    alert = { severity: 'CRITICAL', message: `Still can't see ${label}'s price after ~${Math.round((n * O.BACKOFF_MS) / 60000)} min — I can't watch it, so it could miss a stop or target. Please check this position in Groww now.` };
     s.blindLevel = 'CRITICAL';
     s.lastAlertedFail = n;
   } else if (n > O.MAX_FAILS_CRIT && (n - O.MAX_FAILS_CRIT) % O.REALERT_EVERY === 0) {
-    alert = { severity: 'CRITICAL', message: `${label} monitor blind for ${n} cycles. Still down (${errMsg}). Manual watch required.` };
+    alert = { severity: 'CRITICAL', message: `${label} is still unreachable after ${n} tries. Watch it in Groww yourself. (${errMsg})` };
     s.lastAlertedFail = n;
   }
   return { state: s, alert };
@@ -124,7 +124,7 @@ export function recover(state: MonitorState, O: WatchdogOpts, label: string): { 
   const s: MonitorState = { ...state };
   let alert: WatchdogAlert | null = null;
   if ((s.consecutiveFails || 0) >= O.MAX_FAILS_WARN && s.blindLevel) {
-    alert = { severity: 'INFO', message: `${label} monitor RECOVERED — MCP reachable again after ${s.consecutiveFails} blind cycles.` };
+    alert = { severity: 'INFO', message: `${label} is back — live prices are flowing again, watching resumed.` };
   }
   s.consecutiveFails = 0;
   s.blindLevel = null;

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { MessageSquare } from 'lucide-react';
 import { useCollection } from '../lib/useFirestore';
 
 interface Alert {
@@ -15,7 +16,7 @@ interface Alert {
 const SEV: Record<string, string> = { CRITICAL: 'text-red-500', WARNING: 'text-orange-500', INFO: 'text-sky-500' };
 const DOT: Record<string, string> = { CRITICAL: 'bg-red-500', WARNING: 'bg-orange-500', INFO: 'bg-sky-500' };
 
-export function AlertsTab({ uid }: { uid: string }) {
+export function AlertsTab({ uid, onOpenChat }: { uid: string; onOpenChat?: (cid: string) => void }) {
   const alerts = useCollection<Alert>(`users/${uid}/alerts`, 'ts', 'desc');
   const [filter, setFilter] = useState<'ALL' | 'CRITICAL' | 'WARNING' | 'INFO'>('ALL');
   const shown = alerts.filter((a) => filter === 'ALL' || (a.severity || '').toUpperCase() === filter);
@@ -49,6 +50,14 @@ export function AlertsTab({ uid }: { uid: string }) {
                 </div>
                 <p className="mt-1 text-sm">{a.message}</p>
                 {a.monitorName && <p className="mt-0.5 text-[11px] text-muted">monitor: {a.monitorName}</p>}
+                {a.conversationId && onOpenChat && (
+                  <button
+                    onClick={() => onOpenChat(a.conversationId!)}
+                    className="mt-1.5 inline-flex items-center gap-1 rounded-md border border-border px-2 py-0.5 text-[11px] text-muted hover:bg-surface-2 hover:text-fg"
+                  >
+                    <MessageSquare size={12} /> Discuss in chat
+                  </button>
+                )}
               </div>
             </div>
           );

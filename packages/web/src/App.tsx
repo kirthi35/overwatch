@@ -82,8 +82,10 @@ const NAV: { id: Tab; label: string; icon: React.ReactNode }[] = [
 function MainApp() {
   const [onboarded, setOnboarded] = useState<ModelInfo[] | null | false>(null);
   const [tab, setTab] = useState<Tab>('chat');
+  const [targetCid, setTargetCid] = useState<string | null>(null);
   const { dark, toggle } = useTheme();
   const uid = auth.currentUser?.uid ?? '';
+  const openChat = (cid: string) => { setTargetCid(cid); setTab('chat'); };
 
   useEffect(() => {
     listModels().then(setOnboarded).catch(() => setOnboarded(false));
@@ -95,10 +97,10 @@ function MainApp() {
       <main className="min-h-0 min-w-0 flex-1">
         {onboarded === null && <Centered>Checking configuration…</Centered>}
         {onboarded === false && <Centered>No LLM key found. Set ANTHROPIC_API_KEY or OLLAMA_API_KEY in .env and restart the server.</Centered>}
-        {onboarded && tab === 'chat' && <ChatArea uid={uid} />}
+        {onboarded && tab === 'chat' && <ChatArea uid={uid} openCid={targetCid} />}
         {onboarded && tab === 'trades' && <TradesTab uid={uid} />}
         {onboarded && tab === 'monitors' && <MonitorsTab uid={uid} />}
-        {onboarded && tab === 'alerts' && <AlertsTab uid={uid} />}
+        {onboarded && tab === 'alerts' && <AlertsTab uid={uid} onOpenChat={openChat} />}
         {onboarded && tab === 'settings' && <SettingsTab uid={uid} />}
       </main>
     </div>
@@ -142,7 +144,7 @@ function TopBar({ tab, setTab, dark, toggle }: { tab: Tab; setTab: (t: Tab) => v
 
 interface Convo { id: string; title?: string; updatedAt?: string }
 
-function ChatArea({ uid }: { uid: string }) {
+function ChatArea({ uid, openCid }: { uid: string; openCid?: string | null }) {
   const convos = useCollection<Convo>(`users/${uid}/conversations`, 'updatedAt', 'desc');
   const [activeCid, setActiveCid] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -151,6 +153,11 @@ function ChatArea({ uid }: { uid: string }) {
   useEffect(() => {
     if (!activeCid && convos.length > 0) setActiveCid(convos[0].id);
   }, [convos, activeCid]);
+
+  // "Discuss in chat" from an alert opens that alert's originating conversation.
+  useEffect(() => {
+    if (openCid) setActiveCid(openCid);
+  }, [openCid]);
 
   const newChat = async () => {
     setCreating(true);
