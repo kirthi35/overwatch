@@ -28,17 +28,29 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
 }
 
 // A connection-level failure (vs. a per-tool backend error). Triggers a reconnect.
-function isConnError(msg: string): boolean {
+export function isConnError(msg: string): boolean {
   return /timed out|terminated|ECONNREFUSED|ECONNRESET|ENOTFOUND|EAI_AGAIN|socket hang up|not connected|fetch failed|network|502|503|504|closed/i.test(
     msg || '',
   );
 }
 
+// Tools that read the user's Groww ACCOUNT (they need the account permission scope on
+// the API key), as opposed to public market data. A CONSISTENT backend error on these
+// while market-data tools succeed is the signature of a key that is missing the
+// Holdings/Positions scope — NOT a feed outage.
+const ACCOUNT_SCOPE_TOOLS = new Set([
+  'get_equity_portfolio_holdings',
+  'get_my_trading_positions_today',
+  'get_specific_stock_position',
+  'get_available_margin_details',
+  'get_order_details',
+]);
+
 // The single blind signal the model sees when a data tool can't reach Groww.
 // Returned as a NORMAL (non-throwing) result on purpose: a raw thrown MCP error
 // reads as vague noise the model fabricated around; this is an unmissable
 // instruction embedded in the tool output.
-function feedDownResult(name: string, reason: string) {
+export function feedDownResult(name: string, reason: string) {
   const text =
     `🚫 GROWW_FEED_DOWN — tool "${name}" could not fetch live data (${reason}).\n` +
     `LIVE MARKET DATA IS UNAVAILABLE right now. Per DATA INTEGRITY rules: do NOT state, ` +
@@ -46,6 +58,49 @@ function feedDownResult(name: string, reason: string) {
     `turn's number as "current". Tell the user plainly that the Groww feed is down and that ` +
     `you are BLIND. You may re-check with the market_feed_status tool.`;
   return { content: [{ type: 'text' as const, text }], details: { feedDown: true, tool: name } };
+}
+
+// A per-tool error where the Groww server RESPONDED with `isError` (permission,
+// validation, or a backend fault) — the connection is UP, only this one tool failed.
+// Returned as a NORMAL (non-throwing) result carrying the real error so the model
+// reports the actual problem, instead of the old behaviour that promoted ANY tool
+// error to a global GROWW_FEED_DOWN / BLIND panic (wrong: a holdings permission error
+// would make the agent refuse to quote perfectly-available market prices).
+export function toolErrorResult(name: string, detail: string) {
+  const isValidation = /validation error|field required|type=missing/i.test(detail);
+  const scopeHint =
+    !isValidation && ACCOUNT_SCOPE_TOOLS.has(name)
+      ? ` This tool reads your Groww ACCOUNT (holdings/positions/margin). A consistent ` +
+        `backend error here almost always means the Groww API key is missing the ` +
+        `Holdings/Positions permission scope — the user must regenerate the Groww API key ` +
+        `with account read scope. Market data is unaffected.`
+      : '';
+  const text =
+    `⚠️ Groww tool "${name}" returned an error: ${detail}.` +
+    scopeHint +
+    ` NOTE: the Groww connection is UP — this is a single-tool error, NOT a feed blackout, ` +
+    `so do NOT declare yourself blind. Do NOT fabricate the missing values; report this ` +
+    `specific tool failure to the user.`;
+  return { content: [{ type: 'text' as const, text }], details: { toolError: true, tool: name } };
+}
+
+// Build the tagged error `callRaw` throws when the server returns `isError`. The tag
+// (`toolBackendError`) lets the execute wrapper distinguish a server-side tool error
+// (connection fine) from a transport/blind failure.
+export function makeToolBackendError(name: string, content: unknown): Error {
+  const detail = Array.isArray(content)
+    ? (content as Array<any>)
+        .filter((c) => c?.type === 'text')
+        .map((c) => c.text)
+        .join(' ') || JSON.stringify(content)
+    : JSON.stringify(content);
+  const err = new Error(`MCP tool ${name} error: ${detail}`) as Error & {
+    toolBackendError?: boolean;
+    toolErrorDetail?: string;
+  };
+  err.toolBackendError = true;
+  err.toolErrorDetail = detail;
+  return err;
 }
 
 // ---- P2: fundamentals stats-enum sanitizer --------------------------------
@@ -195,11 +250,12 @@ export class GrowwMcpBridge {
     }
   }
 
-  // Raw call: timeout-guarded, throws on error/transport failure.
+  // Raw call: timeout-guarded. Throws a TAGGED backend error when the server responds
+  // with `isError` (connection fine, tool failed), or a plain error on transport failure.
   private async callRaw(name: string, args: any): Promise<string> {
     if (!this.client) throw new Error('Groww MCP not connected');
     const result: any = await withTimeout(this.client.callTool({ name, arguments: args }), CALL_TIMEOUT_MS, `Groww ${name}`);
-    if (result.isError) throw new Error(`MCP tool ${name} error: ${JSON.stringify(result.content)}`);
+    if (result.isError) throw makeToolBackendError(name, result.content);
     return (result.content as Array<any>).filter((c) => c.type === 'text').map((c) => c.text).join('\n');
   }
 
@@ -290,11 +346,16 @@ export class GrowwMcpBridge {
                 const text = await this.callRaw(tool.name, clean);
                 return { content: [{ type: 'text', text }], details: {} };
               } catch (e1: any) {
+                // Server RESPONDED with a per-tool error (permission/validation/backend).
+                // Connection is fine — surface the real error; do NOT declare the feed blind.
+                if (e1?.toolBackendError) return toolErrorResult(tool.name, e1.toolErrorDetail || e1.message);
+                // Transport/connection failure — one reconnect, else the feed is genuinely down.
                 if (isConnError(e1.message) && (await this.reconnect())) {
                   try {
                     const text = await this.callRaw(tool.name, clean);
                     return { content: [{ type: 'text', text }], details: {} };
                   } catch (e2: any) {
+                    if (e2?.toolBackendError) return toolErrorResult(tool.name, e2.toolErrorDetail || e2.message);
                     return feedDownResult(tool.name, e2.message);
                   }
                 }
