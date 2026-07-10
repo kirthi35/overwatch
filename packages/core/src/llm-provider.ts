@@ -23,14 +23,17 @@ const PI_AGENT_DIR = path.join(os.homedir(), '.pi', 'agent');
 const MODELS_JSON = path.join(PI_AGENT_DIR, 'models.json');
 
 export const OLLAMA_PROVIDER = 'ollama-cloud';
-// Tags the OpenAI-compat endpoint (/v1) expects — as listed by GET /v1/models.
-// NOTE: bare "glm-5.2", NOT "glm-5.2:cloud". The ":cloud" suffix is native-Ollama
-// naming; on /v1 it returns an empty completion.
-export const DEFAULT_GLM_MODEL = 'glm-5.2';
-// The GLM family we register so all of them are pickable in-session via `/model`.
-// Verified present on Ollama Cloud 2026-07-01. Override with `overwatch_glm_models`
-// (comma-separated). Only OUR provider's models — nothing else is touched.
-export const DEFAULT_GLM_MODELS = ['glm-5.2', 'glm-5.1', 'glm-5', 'glm-4.7'];
+// The default active Ollama Cloud model when none is set via env. Selectable
+// per-deployment via `overwatch_glm_model` (the box pins deepseek-v4-pro:cloud).
+export const DEFAULT_GLM_MODEL = 'deepseek-v4-pro:cloud';
+// The Ollama Cloud models we register so they're pickable in-session via `/model`.
+// ALWAYS use the ":cloud" suffix. The suffix pins the CLOUD-HOSTED model, which is what
+// the operator's Ollama key is provisioned for; bare tags (e.g. "glm-5.2") can route to
+// a different / local path and cause BILLING issues. Both tags verified to return real
+// completions on the OpenAI-compat /v1 endpoint 2026-07-10. NOTE: these are REASONING
+// models — reasoning tokens count against the completion budget, so maxTokens is set
+// generously in the provider registration. Override with `overwatch_glm_models`.
+export const DEFAULT_GLM_MODELS = ['deepseek-v4-pro:cloud', 'glm-5.2:cloud'];
 export const DEFAULT_OLLAMA_BASE_URL = 'https://ollama.com/v1';
 
 export interface GlmConfig {
@@ -106,7 +109,7 @@ export function registerOllamaProvider(cfg: GlmConfig): void {
     apiKey: '$OLLAMA_API_KEY',
     models: cfg.models.map((id) => ({
       id,
-      name: `GLM (${id})`,
+      name: `Ollama Cloud (${id})`,
       contextWindow: 128000,
       maxTokens: 16384,
     })),

@@ -57,7 +57,7 @@ function buildAuthAndRegistry(u: UserContext): { auth: AuthStorage; registry: Mo
       baseUrl: u.llm.ollama.baseUrl,
       api: 'openai-completions',
       apiKey: u.llm.ollama.apiKey,
-      models: u.llm.ollama.models.map((id) => ({ id, name: `GLM (${id})`, ...GLM_MODEL_DEFAULTS })),
+      models: u.llm.ollama.models.map((id) => ({ id, name: `Ollama Cloud (${id})`, ...GLM_MODEL_DEFAULTS })),
     });
   }
   return { auth, registry };

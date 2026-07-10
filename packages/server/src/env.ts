@@ -63,6 +63,9 @@ export function devCredsFromEnv(dotenv: Record<string, string>): UserCreds | nul
     creds.ollamaBaseUrl = dotenv.ollama_base_url || DEFAULT_OLLAMA_BASE_URL;
     creds.glmModels = (dotenv.overwatch_glm_models || DEFAULT_GLM_MODELS.join(',')).split(',').map((s) => s.trim()).filter(Boolean);
     creds.glmModelId = dotenv.overwatch_glm_model || DEFAULT_GLM_MODEL;
+    // The active model MUST be in the registered list, else pickModel silently falls
+    // back to the first available model. Guarantee it (mirrors resolveGlmConfig).
+    if (!creds.glmModels.includes(creds.glmModelId)) creds.glmModels.unshift(creds.glmModelId);
   } else {
     if (anthropicKey) creds.anthropicKey = anthropicKey;
     if (ollamaKey) {
@@ -70,6 +73,7 @@ export function devCredsFromEnv(dotenv: Record<string, string>): UserCreds | nul
       creds.ollamaBaseUrl = dotenv.ollama_base_url || DEFAULT_OLLAMA_BASE_URL;
       creds.glmModels = (dotenv.overwatch_glm_models || DEFAULT_GLM_MODELS.join(',')).split(',').map((s) => s.trim()).filter(Boolean);
       creds.glmModelId = dotenv.overwatch_glm_model || DEFAULT_GLM_MODEL;
+      if (!creds.glmModels.includes(creds.glmModelId)) creds.glmModels.unshift(creds.glmModelId);
     }
   }
   if (!creds.anthropicKey && !creds.ollamaKey) return null;
