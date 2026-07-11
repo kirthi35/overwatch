@@ -2,7 +2,8 @@
 // Consumed by @overwatch/cli (terminal), and (later) @overwatch/server and
 // @overwatch/worker. No terminal/UI assumptions live here.
 
-export { makeOverwatchExtension, MASTER_SYSTEM_PROMPT } from './doctrine.js';
+export { makeOverwatchExtension, MASTER_SYSTEM_PROMPT, buildMasterPrompt } from './doctrine.js';
+export { relativeAge, formatIst, istNowBanner } from './time.js';
 export type { OverwatchExtensionOptions } from './doctrine.js';
 export {
   resolveLlmProvider,

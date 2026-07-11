@@ -3,6 +3,7 @@ import { Type } from '@sinclair/typebox';
 import { notifyTelegram } from './telegram.js';
 import { UserContext, Monitor, AlertSeverity, JournalRecord, Trade } from './types.js';
 import { mergeTrade, isAdherent, assertTradeConsistent } from './trade.js';
+import { formatIst } from './time.js';
 
 // Custom (non-Groww) tools, parameterized by UserContext so each agent session
 // writes to that user's own store (FileStore for the CLI, FirestoreStore for the
@@ -101,7 +102,9 @@ export function registerCustomTools(api: ExtensionAPI, u: UserContext) {
         const summary =
           `Armed ${monitor.symbol} (${monitor.name}) — poll ${monitor.poll_minutes}m` +
           `${monitor.time_gate_ist ? `, after ${monitor.time_gate_ist} IST` : ''}. Gates: ${gateList}. ` +
-          `It evaluates during NSE hours and survives this session closing.`;
+          `It evaluates during NSE hours and survives this session closing. ` +
+          `⚠️ Alerts fire at THESE armed gates — restate them to the user and reconcile ` +
+          `with any stop you quoted in your analysis (re-arm if they differ).`;
         return { content: [{ type: 'text', text: summary }], details: { armed: true, name: monitor.name } };
       } catch (e: any) {
         throw new Error(`❌ arm_monitor FAILED — the monitor was NOT armed and nothing is watching ${args.symbol}. Reason: ${e.message}. You MUST tell the user this write failed; do not describe the monitor as armed or watching.`);
@@ -180,11 +183,19 @@ export function registerCustomTools(api: ExtensionAPI, u: UserContext) {
             },
           };
         });
+        const now = Date.now();
         const summary = view
           .map((m) => {
             const s = m.state;
-            const ltp = s.lastLtp_STALE != null ? `₹${s.lastLtp_STALE} (last polled ${s.lastPoll || 'never'}, STALE)` : 'no reading yet';
-            const status = s.fired ? 'FIRED' : s.blindLevel ? `BLIND:${s.blindLevel}` : 'armed';
+            // Absolute IST stamp + day label + relative age: the bare ISO form let the
+            // model read yesterday's 15:30 close-of-market poll as "today ~3:30 PM".
+            const polled = s.lastPoll ? formatIst(s.lastPoll, now) : 'never';
+            const ltp = s.lastLtp_STALE != null ? `₹${s.lastLtp_STALE} (last polled ${polled}, STALE)` : 'no reading yet';
+            const status = s.fired
+              ? 'FIRED (terminal — polling STOPPED; this monitor will never alert again)'
+              : s.blindLevel
+                ? `BLIND:${s.blindLevel}`
+                : 'armed';
             return `- ${m.symbol} (${m.name}): ${status}; ${ltp}`;
           })
           .join('\n');

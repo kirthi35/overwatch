@@ -28,6 +28,11 @@ a gate fails. Cash is a valid position.
    is VOID → STAND DOWN. (Standing Orders 2, 3.)
    Also required: regime-gate must report GO this session; portfolio-risk must report
    BOOK CLEARS (budget, heat, correlation, event) this session.
+   Gate 0 additionally requires a successful `get_quotes_and_depth` fetch for this
+   symbol in THE SAME TURN as the verdict. If the feed is down or the fetch failed,
+   the verdict is **STAND DOWN (stale-data)** — no exceptions, regardless of how
+   recent a monitor reading or an earlier turn's quote looks. There is no such thing
+   as a "live risk gate" on stale data.
 1. **Daily-close trend confirmation.** Validity is set by the daily **CLOSE**, not
    intraday wicks. A forming candle proves nothing.
 2. **Order-book gate.** sell:buy depth ratio **> 3:1 = ABORT, no exceptions.**

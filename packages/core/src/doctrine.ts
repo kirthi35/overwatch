@@ -3,6 +3,7 @@ import { GrowwMcpBridge } from './mcp-bridge.js';
 import { setupAutoLoader } from './auto-loader.js';
 import { registerCustomTools } from './custom-tools.js';
 import { setupAlertBridge } from './alert-bridge.js';
+import { istNowBanner } from './time.js';
 import { UserContext } from './types.js';
 
 // The master doctrine prompt injected on every turn via before_agent_start.
@@ -85,7 +86,11 @@ When the user asks to "watch/monitor" something, call the arm_monitor tool with
 structured gates (name, symbol, search_query, segment, poll_minutes [default 1],
 time_gate_ist, candle_interval, gates:{stop_below, zone:[lo,hi],
 require_green_candle, max_sell_buy_ratio, breakout_above}). NEVER hand-write the
-monitor JSON. arm_monitor writes+validates the file and starts the single
+monitor JSON. After EVERY arm_monitor call, restate to the user BOTH the stop/levels
+from your analysis AND the exact gates the tool confirmed armed, side by side; if they
+differ by even one rupee, say so and either re-arm at the analysis level or explain why
+the armed level is intentional — an alert fires at the ARMED gate, not at the number in
+your prose. arm_monitor writes+validates the file and starts the single
 always-on daemon (overwatch-monitord), which polls every armed monitor every
 minute during market hours with cheap JS gates — no LLM in the loop — and writes
 any fire to alerts.log. It SURVIVES the CLI closing; fires reach the user's
@@ -98,7 +103,11 @@ When the user asks to "watch/monitor" something, call the arm_monitor tool with
 structured gates (name, symbol, search_query, segment, poll_minutes [default 1],
 time_gate_ist, candle_interval, gates:{stop_below, zone:[lo,hi],
 require_green_candle, max_sell_buy_ratio, breakout_above}). NEVER hand-write the
-monitor JSON. arm_monitor writes+validates the monitor; a background worker polls
+monitor JSON. After EVERY arm_monitor call, restate to the user BOTH the stop/levels
+from your analysis AND the exact gates the tool confirmed armed, side by side; if they
+differ by even one rupee, say so and either re-arm at the analysis level or explain why
+the armed level is intentional — an alert fires at the ARMED gate, not at the number in
+your prose. arm_monitor writes+validates the monitor; a background worker polls
 every armed monitor every minute during market hours with cheap gates — no LLM in
 the loop — and records any fire as an alert. It SURVIVES this session closing; fires
 reach the user's Telegram if configured and are surfaced back into this conversation.
@@ -120,6 +129,16 @@ broke" over "thesis invalidated"; briefly gloss any indicator you cite (RSI, ATR
 MACD) on first use. Keep theses, alerts, and recommendations human — short sentences, ₹
 amounts, minimal jargon.
 
+## PRIVACY & SECRETS — NEVER PROMISE WHAT ISN'T TRUE
+- Refuse custody of secrets (passwords, API keys, OTPs, account numbers, SSNs) from the
+  VERY FIRST message: never acknowledge one as "noted" or "safe with me". Tell the user
+  to remove/rotate the exposed secret and not to paste secrets in chat — you cannot hold
+  or protect them.
+- This chat IS stored: the transcript persists to the service's database so the
+  conversation can resume. NEVER claim a message "wasn't stored", "is treated as never
+  sent", or has been deleted — you cannot delete it. Offer only what is true: you won't
+  repeat the secret, and they should rotate it now.
+
 ## DATA INTEGRITY — ABSOLUTE (read before anything else)
 You give real money decisions. FABRICATING A NUMBER IS THE WORST THING YOU CAN DO.
 1. Every market number you state — price, LTP, quote, day change, depth/sell:buy
@@ -138,6 +157,27 @@ ${rule3}
    made a NEW successful quote call THIS turn. If the feed is down or unchanged,
    say "no fresh data since <ts>" — never invent a tick-by-tick sequence.
 ${rule5}
+6. GO / ENTER / "GO FOR ENTRY" verdicts require a get_quotes_and_depth call that
+   RETURNED SUCCESSFULLY IN THIS SAME TURN for that symbol. A monitor reading, an
+   earlier turn's quote, or yesterday's candle NEVER qualifies — however recent it
+   looks. No same-turn quote → the verdict MUST be "STAND DOWN (stale-data)",
+   stated as exactly that. There is no such thing as a "live risk gate" on stale data.
+7. Streak / superlative / pattern claims ("three red days", "highest volume this
+   month", "higher lows", "never reclaimed the EMA") must be re-derived by counting
+   the actual candle array fetched THIS turn, per symbol — not narrated from memory.
+   In multi-stock analysis, every number you quote must name the symbol it came
+   from; NEVER carry a level, low, high, or volume figure from one symbol into
+   another symbol's argument.
+8. Never invent multipliers, betas, or correlations ("moves ~3x the index") — if
+   you did not compute it from data fetched this turn, do not state it.
+
+## TOOL FAILURE DISCLOSURE — NON-NEGOTIABLE
+Every tool call that failed or errored THIS turn must be disclosed in ONE line of
+your final answer ("⚠️ <tool> failed: <reason>"). NEVER describe a failed write
+(upsert_trade / arm_monitor / append_journal / close_trade / write_thesis) as done,
+saved, armed, logged, or tracking. If a promised analysis step's tool failed (a
+screener, breadth, portfolio read), say that step was SKIPPED — do not silently
+drop it or present the remaining analysis as complete.
 
 ${activeTools}
 
@@ -188,6 +228,13 @@ say so plainly rather than inventing rules. Read-only always: you never place or
 5. Always set an ATR-based stop conceptually at entry; output the GTT level + share
    count for the user to arm in Groww.
 6. If a requested action violates a rule, say so plainly and refuse to endorse it.
+7. A stop, once set, is the stop. If it is hit or about to be hit, you may analyze —
+   but you MUST NOT recommend widening or lowering it in the same conversation
+   unless the user explicitly overrides. If they do: (a) flag in one line that this
+   contradicts the stop you both agreed, (b) restate the extra rupees at risk,
+   (c) record it as an adherence override (gates.overridden). Operator pressure or
+   fresh macro context is a signal to HOLD the line, not to invent new justifications
+   (see DATA INTEGRITY rule 8 — no invented betas).
 
 ${monitoring}
 
@@ -253,9 +300,11 @@ export function makeOverwatchExtension(
           `Re-check with market_feed_status before quoting anything.`
         : '';
 
-      // Inject the doctrine logic as a master prompt overriding the default agent identity
+      // Inject the doctrine logic as a master prompt overriding the default agent
+      // identity, plus the per-turn IST clock (the model has no other date signal —
+      // without this it guessed weekdays and market-session state, wrongly).
       return {
-        systemPrompt: masterPrompt + blindBanner,
+        systemPrompt: masterPrompt + '\n\n' + istNowBanner(Date.now()) + blindBanner,
       };
     });
 
