@@ -66,11 +66,14 @@ export function registerCustomTools(api: ExtensionAPI, u: UserContext) {
       const g = args.gates || {};
       const hasGate = ['stop_below', 'zone', 'require_green_candle', 'max_sell_buy_ratio', 'breakout_above']
         .some((k) => g[k] !== undefined && g[k] !== null);
+      // Failures THROW (here and in every write tool below): Pi flags a thrown
+      // error as an isError tool result, which the model cannot misread as
+      // success — the audit caught it describing failed writes as done.
       if (!hasGate) {
-        return { content: [{ type: 'text', text: 'arm_monitor: refused — no gates given. Supply at least one of stop_below, zone, or breakout_above.' }], details: { armed: false, name: undefined as string | undefined } };
+        throw new Error('❌ arm_monitor REFUSED — NO monitor was armed. Supply at least one of stop_below, zone, or breakout_above. You MUST tell the user no monitor is watching this.');
       }
       if (g.require_green_candle && args.candle_interval === undefined) {
-        return { content: [{ type: 'text', text: 'arm_monitor: refused — require_green_candle needs candle_interval (e.g. 15) so the poller can fetch candles.' }], details: { armed: false, name: undefined as string | undefined } };
+        throw new Error('❌ arm_monitor REFUSED — NO monitor was armed. require_green_candle needs candle_interval (e.g. 15) so the poller can fetch candles. You MUST tell the user no monitor is watching this.');
       }
 
       const monitor: Monitor = {
@@ -101,7 +104,7 @@ export function registerCustomTools(api: ExtensionAPI, u: UserContext) {
           `It evaluates during NSE hours and survives this session closing.`;
         return { content: [{ type: 'text', text: summary }], details: { armed: true, name: monitor.name } };
       } catch (e: any) {
-        return { content: [{ type: 'text', text: `arm_monitor: failed to write monitor — ${e.message}` }], details: { armed: false, name: undefined as string | undefined } };
+        throw new Error(`❌ arm_monitor FAILED — the monitor was NOT armed and nothing is watching ${args.symbol}. Reason: ${e.message}. You MUST tell the user this write failed; do not describe the monitor as armed or watching.`);
       }
     },
   });
@@ -122,7 +125,7 @@ export function registerCustomTools(api: ExtensionAPI, u: UserContext) {
         }
         return { content: [{ type: 'text', text: `Disarmed '${args.name}'. The poller drops it on the next tick.` }], details: { disarmed: true } };
       } catch (e: any) {
-        return { content: [{ type: 'text', text: `disarm_monitor: failed — ${e.message}` }], details: { disarmed: false } };
+        throw new Error(`❌ disarm_monitor FAILED — the monitor '${args.name}' was NOT removed and may still fire alerts. Reason: ${e.message}. You MUST tell the user this failed.`);
       }
     },
   });
@@ -227,7 +230,7 @@ export function registerCustomTools(api: ExtensionAPI, u: UserContext) {
         await u.store.putThesis(args.id, doc);
         return { content: [{ type: 'text', text: `Wrote thesis '${args.id}'.` }], details: { written: true, id: args.id } };
       } catch (e: any) {
-        return { content: [{ type: 'text', text: `write_thesis: failed — ${e.message}` }], details: { written: false, id: undefined as string | undefined } };
+        throw new Error(`❌ write_thesis FAILED — NOTHING WAS SAVED for '${args.id}'. Reason: ${e.message}. You MUST tell the user this write failed; do not describe the thesis as recorded.`);
       }
     },
   });
@@ -254,16 +257,17 @@ export function registerCustomTools(api: ExtensionAPI, u: UserContext) {
           try { rec = JSON.parse(rec); } catch { /* handled below */ }
         }
         if (rec === null || typeof rec !== 'object' || Array.isArray(rec)) {
-          return { content: [{ type: 'text', text: 'append_journal: failed — record must be an object.' }], details: { written: false, symbol: undefined as string | undefined } };
+          throw new Error('❌ append_journal FAILED — NOTHING WAS RECORDED: record must be an object. You MUST tell the user the journal entry was not saved.');
         }
         const symbol = (rec as Record<string, unknown>).symbol;
         if (typeof symbol !== 'string' || !symbol.trim()) {
-          return { content: [{ type: 'text', text: 'append_journal: failed — record.symbol is required.' }], details: { written: false, symbol: undefined as string | undefined } };
+          throw new Error('❌ append_journal FAILED — NOTHING WAS RECORDED: record.symbol is required. You MUST tell the user the journal entry was not saved.');
         }
         await u.store.appendJournal(rec as JournalRecord);
         return { content: [{ type: 'text', text: `Recorded journal entry for '${symbol}'.` }], details: { written: true, symbol: symbol as string | undefined } };
       } catch (e: any) {
-        return { content: [{ type: 'text', text: `append_journal: failed — ${e.message}` }], details: { written: false, symbol: undefined as string | undefined } };
+        if (/append_journal FAILED/.test(e.message)) throw e;
+        throw new Error(`❌ append_journal FAILED — NOTHING WAS RECORDED. Reason: ${e.message}. You MUST tell the user the journal entry was not saved.`);
       }
     },
   });
@@ -309,7 +313,7 @@ export function registerCustomTools(api: ExtensionAPI, u: UserContext) {
         await u.store.putTrade(merged);
         return { content: [{ type: 'text', text: `Trade ${tradeId} (${merged.symbol}) → ${merged.status}. Reuse tradeId "${tradeId}" for arm_monitor + later updates.` }], details: { tradeId: tradeId as string | undefined, status: merged.status as string | undefined } };
       } catch (e: any) {
-        return { content: [{ type: 'text', text: `upsert_trade: failed — ${e.message}` }], details: { tradeId: undefined as string | undefined, status: undefined as string | undefined } };
+        throw new Error(`❌ upsert_trade FAILED — NOTHING WAS SAVED. Reason: ${e.message}. The trade record does NOT exist/was NOT updated, and no monitor or audit trail is tracking it. You MUST tell the user this write failed; do not describe the trade as recorded, logged, or tracked.`);
       }
     },
   });
@@ -337,7 +341,7 @@ export function registerCustomTools(api: ExtensionAPI, u: UserContext) {
       try {
         const prev = (await u.store.getTrade(args.tradeId)) as Trade | null;
         if (!prev) {
-          return { content: [{ type: 'text', text: `close_trade: no trade "${args.tradeId}". Create it with upsert_trade first.` }], details: { closed: false, adherent: undefined as boolean | undefined } };
+          throw new Error(`❌ close_trade FAILED — no trade "${args.tradeId}" exists; NOTHING WAS CLOSED. Create it with upsert_trade first. You MUST tell the user the trade was not closed.`);
         }
         const close: any = {};
         if (args.exit_price !== undefined) close.exit_price = args.exit_price;
@@ -354,7 +358,8 @@ export function registerCustomTools(api: ExtensionAPI, u: UserContext) {
         const adh = close.adherent ? 'rules FOLLOWED' : 'rules OVERRIDDEN (adherence failure)';
         return { content: [{ type: 'text', text: `Closed ${merged.symbol} — ${args.realized_R != null ? args.realized_R + 'R, ' : ''}thesis ${close.thesis_verdict || '?'}, ${adh}.` }], details: { closed: true, adherent: close.adherent as boolean | undefined } };
       } catch (e: any) {
-        return { content: [{ type: 'text', text: `close_trade: failed — ${e.message}` }], details: { closed: false, adherent: undefined as boolean | undefined } };
+        if (/close_trade FAILED/.test(e.message)) throw e;
+        throw new Error(`❌ close_trade FAILED — the trade was NOT closed and NOTHING WAS SAVED. Reason: ${e.message}. You MUST tell the user this write failed; do not describe the trade as closed.`);
       }
     },
   });

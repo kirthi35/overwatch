@@ -34,6 +34,26 @@ export function isConnError(msg: string): boolean {
   );
 }
 
+// Classify a THROWN tool failure so 429/500 don't get promoted to a full feed
+// blackout. Order matters: "Network error: 500 …" contains "network", so the
+// rate/backend checks must run BEFORE the conn check. 502/503/504 stay 'conn'
+// (gateway-level → reconnect makes sense); 429/500 mean the connection is UP.
+// The \b500\b variants are anchored to error-ish context so a price like
+// "LTP 1500" or "24,500" can never classify as a backend error.
+export function classifyToolFailure(msg: string): 'conn' | 'rate' | 'backend' | 'unknown' {
+  const m = msg || '';
+  if (/\b429\b|too many requests|rate.?limit/i.test(m)) return 'rate';
+  if (/internal server error|error[:\s]+500\b|\bHTTP\s*500\b|\bstatus\s*[:=]?\s*500\b|\b500\s+internal\b/i.test(m)) return 'backend';
+  if (isConnError(m)) return 'conn';
+  return 'unknown';
+}
+
+// Single retry delay when Groww rate-limits (429). One retry max — the call
+// budget is CALL_TIMEOUT_MS; multi-retry loops would blow it.
+const RATE_RETRY_DELAY_MS = 1500;
+// Retry delay when listTools returns fewer tools than the known-good catalog.
+const LIST_RETRY_DELAY_MS = 500;
+
 // Tools that read the user's Groww ACCOUNT (they need the account permission scope on
 // the API key), as opposed to public market data. A CONSISTENT backend error on these
 // while market-data tools succeed is the signature of a key that is missing the
@@ -134,6 +154,64 @@ function sanitizeArgs(name: string, args: any, schema: any): any {
   return args;
 }
 
+// ---- pre-validation arg coercion -------------------------------------------
+// The model chronically serializes object params as JSON STRINGS (e.g.
+// fetch_technical_screener's `request`), and Pi's TypeBox validation never
+// JSON.parses string→object — so the call fails "request: must be object" every
+// time, and retries re-send the identical malformed payload. This runs as the
+// tool's `prepareArguments` hook (BEFORE validation) and parses any string arg
+// whose schema expects an object/array. Defensive by design: any parse failure
+// returns the original value untouched so the normal validation error still
+// surfaces — never swallow, never guess.
+function schemaWantsObjectish(s: any): boolean {
+  if (!s || typeof s !== 'object') return false;
+  const collect = (x: any): any[] => (Array.isArray(x?.anyOf) || Array.isArray(x?.oneOf) ? [...(x.anyOf ?? []), ...(x.oneOf ?? [])] : []);
+  const candidates = [s, ...collect(s)];
+  return candidates.some((c) => {
+    const t = c?.type;
+    const types = Array.isArray(t) ? t : [t];
+    return types.includes('object') || types.includes('array');
+  });
+}
+
+export function coerceStringifiedArgs(args: unknown, rawSchema: any): unknown {
+  const tryParse = (v: string): unknown => {
+    try {
+      const parsed = JSON.parse(v);
+      return parsed !== null && typeof parsed === 'object' ? parsed : v;
+    } catch {
+      return v;
+    }
+  };
+  // Whole-args-as-string: the model sent the entire arguments payload as one string.
+  if (typeof args === 'string') {
+    const parsed = tryParse(args);
+    if (parsed !== args) args = parsed;
+    else return args;
+  }
+  if (!args || typeof args !== 'object' || Array.isArray(args)) return args;
+  const props = rawSchema?.properties;
+  if (!props || typeof props !== 'object') return args;
+  let out: Record<string, unknown> | null = null;
+  for (const [k, v] of Object.entries(args as Record<string, unknown>)) {
+    if (typeof v === 'string' && schemaWantsObjectish(props[k])) {
+      const parsed = tryParse(v);
+      if (parsed !== v) {
+        if (!out) out = { ...(args as Record<string, unknown>) };
+        out[k] = parsed;
+      }
+    }
+  }
+  return out ?? args;
+}
+
+// The largest Groww tool catalog any bridge in this process has ever seen.
+// MODULE-level on purpose: the catalog is global (same for every user), but
+// bridges are per-user and rebuilt on session churn — an instance-level cache
+// would reset exactly when it's needed. Used only to DETECT a partial listing
+// and trigger a re-list; tools are never registered from cached definitions.
+let knownGoodToolNames: string[] = [];
+
 // GrowwMcpBridge — a PER-USER instance that owns one Groww MCP connection built
 // from that user's read-only token. Was module-level singleton state; now each
 // agent session constructs its own bridge, so concurrent users never share a
@@ -146,11 +224,14 @@ export class GrowwMcpBridge {
   private toolCount = 0;
   private lastError: string | null = null;
   private connectedAt: number | null = null;
-  // Tools are registered with the Pi agent exactly once per session. Reconnects
-  // only swap the underlying client; the registered `execute` closures read
-  // `this.client`, so a swapped client is picked up automatically.
-  private dataToolsRegistered = false;
+  // Names already registered with the Pi agent this session. Registered `execute`
+  // closures read `this.client`, so a swapped client is picked up automatically.
+  // Registration is per-name (not one-shot): a partial listTools no longer freezes
+  // the tool set — reconnects and later setups re-list and register the missing ones.
+  private registeredToolNames = new Set<string>();
   private statusToolRegistered = false;
+  // The ExtensionAPI handle, kept so reconnect() can register newly-listed tools.
+  private api: ExtensionAPI | null = null;
 
   constructor(private readonly token: string) {}
 
@@ -241,6 +322,16 @@ export class GrowwMcpBridge {
       this.connectedAt = Date.now();
       this.lastError = null;
       console.warn('[+] Groww MCP reconnected.');
+      // Self-heal the tool set: tools missing from the original (possibly partial)
+      // listing get registered now. A re-list failure must NOT fail the reconnect —
+      // the connection itself is back and existing tools work.
+      if (this.api) {
+        try {
+          await this.listAndRegister(this.api);
+        } catch (e: any) {
+          console.warn(`[!] Groww MCP re-list after reconnect failed (${e.message}); keeping existing tool set.`);
+        }
+      }
       return true;
     } catch (e: any) {
       this.mcpReady = false;
@@ -307,12 +398,111 @@ export class GrowwMcpBridge {
     });
   }
 
+  // ---- tool listing + registration -----------------------------------------
+  // List the Groww tools on the CURRENT client and register any not yet known to
+  // Pi. Re-runnable: called from setup() and after a successful reconnect(), so a
+  // partial first listing no longer freezes the tool set for the session.
+  private async listAndRegister(api: ExtensionAPI): Promise<void> {
+    if (!this.client) throw new Error('Groww MCP not connected');
+    let { tools } = await withTimeout(this.client.listTools(), CALL_TIMEOUT_MS, 'listTools');
+    // A listing smaller than the known-good catalog is usually a transient backend
+    // hiccup ("Tool … not found" mid-conversation). Retry once, take the larger
+    // result. Tools are only ever registered from a FRESH listing, never a cache.
+    if (tools.length < knownGoodToolNames.length) {
+      console.warn(`[!] Groww listTools returned ${tools.length} tools (known-good ${knownGoodToolNames.length}); retrying once…`);
+      await new Promise((r) => setTimeout(r, LIST_RETRY_DELAY_MS));
+      try {
+        const second = await withTimeout(this.client.listTools(), CALL_TIMEOUT_MS, 'listTools retry');
+        if (second.tools.length > tools.length) tools = second.tools;
+      } catch {
+        /* keep the first listing */
+      }
+    }
+    if (tools.length >= knownGoodToolNames.length) knownGoodToolNames = tools.map((t) => t.name);
+    this.toolCount = tools.length;
+
+    // Register each data tool with Pi once per name. Each wraps callRaw with
+    // pre-validation arg coercion (prepareArguments), arg-sanitizing (P2), a
+    // timeout, rate-limit/backend classification, ONE reconnect-and-retry on
+    // transport failure, and a loud feed-down result otherwise (P1 — never
+    // vanish silently). api.registerTool is a Map set, so re-registration by
+    // name would be idempotent anyway; the Set just makes the intent explicit.
+    for (const tool of tools) {
+      if (this.registeredToolNames.has(tool.name)) continue;
+      this.registeredToolNames.add(tool.name);
+      const schema = tool.inputSchema ? Type.Unsafe<any>(tool.inputSchema) : Type.Object({});
+      const rawSchema = tool.inputSchema;
+      api.registerTool({
+        name: tool.name,
+        label: `Groww: ${tool.name}`,
+        description: tool.description || `Groww MCP Tool: ${tool.name}`,
+        parameters: schema,
+        // Runs BEFORE TypeBox validation — fixes the model's chronic habit of
+        // sending object params as JSON strings (fetch_technical_screener).
+        prepareArguments: (args: unknown) => coerceStringifiedArgs(args, rawSchema) as any,
+        execute: async (_toolCallId: string, args: any) => {
+          const clean = sanitizeArgs(tool.name, args, rawSchema);
+          try {
+            const text = await this.callRaw(tool.name, clean);
+            return { content: [{ type: 'text', text }], details: {} };
+          } catch (e1: any) {
+            // Server RESPONDED with a per-tool error (permission/validation/backend).
+            // Connection is fine — surface the real error; do NOT declare the feed blind.
+            if (e1?.toolBackendError) return toolErrorResult(tool.name, e1.toolErrorDetail || e1.message);
+            const kind = classifyToolFailure(e1.message);
+            // Rate-limited (429): the connection is UP. One short-delay retry, then
+            // report the rate limit — NEVER promote it to a feed blackout.
+            if (kind === 'rate') {
+              await new Promise((r) => setTimeout(r, RATE_RETRY_DELAY_MS));
+              try {
+                const text = await this.callRaw(tool.name, clean);
+                return { content: [{ type: 'text', text }], details: {} };
+              } catch (e2: any) {
+                if (e2?.toolBackendError) return toolErrorResult(tool.name, e2.toolErrorDetail || e2.message);
+                return toolErrorResult(
+                  tool.name,
+                  `429 rate-limited: ${e2.message}. The Groww API is rate-limiting; wait a few seconds and retry — this is NOT a feed outage, do not declare BLIND`,
+                );
+              }
+            }
+            // Server-side 500: the connection is UP, this one call failed.
+            if (kind === 'backend') return toolErrorResult(tool.name, e1.message);
+            // Transport/connection failure — one reconnect, else the feed is genuinely down.
+            if (kind === 'conn' && (await this.reconnect())) {
+              try {
+                const text = await this.callRaw(tool.name, clean);
+                return { content: [{ type: 'text', text }], details: {} };
+              } catch (e2: any) {
+                if (e2?.toolBackendError) return toolErrorResult(tool.name, e2.toolErrorDetail || e2.message);
+                return feedDownResult(tool.name, e2.message);
+              }
+            }
+            return feedDownResult(tool.name, e1.message);
+          }
+        },
+      });
+    }
+  }
+
   // ---- main entry: connect + register (called per query; guarded) ---------
   async setup(api: ExtensionAPI): Promise<GrowwStatus> {
+    this.api = api;
     // The status tool must exist even when the feed is down, so always register it.
     this.registerStatusTool(api);
 
-    if (this.mcpReady && this.client) return this.status();
+    if (this.mcpReady && this.client) {
+      // Turn-level self-heal: if an earlier partial listing left us short of the
+      // known-good catalog, re-list now instead of returning — otherwise a missing
+      // tool stays missing for the life of this bridge.
+      if (knownGoodToolNames.length > this.registeredToolNames.size) {
+        try {
+          await this.listAndRegister(api);
+        } catch (e: any) {
+          console.warn(`[!] Groww MCP self-heal re-list failed (${e.message}); keeping existing tool set.`);
+        }
+      }
+      return this.status();
+    }
 
     if (!this.token) {
       this.lastError = 'GROWW_API_TOKEN missing';
@@ -323,49 +513,8 @@ export class GrowwMcpBridge {
     try {
       console.log('\nConnecting to Groww MCP via Streamable HTTP…');
       this.client = await this.connectWithRetry();
-
-      const { tools } = await withTimeout(this.client.listTools(), CALL_TIMEOUT_MS, 'listTools');
-      this.toolCount = tools.length;
-      console.log(`[+] Connected! Found ${tools.length} Groww MCP tools.`);
-
-      // Register the data tools with Pi exactly once. Each wraps callRaw with
-      // arg-sanitizing (P2), a timeout, ONE reconnect-and-retry on transport
-      // failure, and a loud feed-down result otherwise (P1 — never vanish silently).
-      if (!this.dataToolsRegistered) {
-        for (const tool of tools) {
-          const schema = tool.inputSchema ? Type.Unsafe<any>(tool.inputSchema) : Type.Object({});
-          const rawSchema = tool.inputSchema;
-          api.registerTool({
-            name: tool.name,
-            label: `Groww: ${tool.name}`,
-            description: tool.description || `Groww MCP Tool: ${tool.name}`,
-            parameters: schema,
-            execute: async (_toolCallId: string, args: any) => {
-              const clean = sanitizeArgs(tool.name, args, rawSchema);
-              try {
-                const text = await this.callRaw(tool.name, clean);
-                return { content: [{ type: 'text', text }], details: {} };
-              } catch (e1: any) {
-                // Server RESPONDED with a per-tool error (permission/validation/backend).
-                // Connection is fine — surface the real error; do NOT declare the feed blind.
-                if (e1?.toolBackendError) return toolErrorResult(tool.name, e1.toolErrorDetail || e1.message);
-                // Transport/connection failure — one reconnect, else the feed is genuinely down.
-                if (isConnError(e1.message) && (await this.reconnect())) {
-                  try {
-                    const text = await this.callRaw(tool.name, clean);
-                    return { content: [{ type: 'text', text }], details: {} };
-                  } catch (e2: any) {
-                    if (e2?.toolBackendError) return toolErrorResult(tool.name, e2.toolErrorDetail || e2.message);
-                    return feedDownResult(tool.name, e2.message);
-                  }
-                }
-                return feedDownResult(tool.name, e1.message);
-              }
-            },
-          });
-        }
-        this.dataToolsRegistered = true;
-      }
+      await this.listAndRegister(api);
+      console.log(`[+] Connected! Found ${this.toolCount} Groww MCP tools.`);
 
       this.mcpReady = true;
       this.connectedAt = Date.now();
