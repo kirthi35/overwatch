@@ -142,7 +142,9 @@ function TopBar({ tab, setTab, dark, toggle }: { tab: Tab; setTab: (t: Tab) => v
   );
 }
 
-interface Convo { id: string; title?: string; updatedAt?: string }
+// lastStats is stamped by the server on the first message flush — its absence
+// means the conversation was opened but never used.
+interface Convo { id: string; title?: string; updatedAt?: string; createdAt?: string; lastStats?: unknown }
 
 function ChatArea({ uid, openCid }: { uid: string; openCid?: string | null }) {
   const convos = useCollection<Convo>(`users/${uid}/conversations`, 'updatedAt', 'desc');
@@ -152,7 +154,8 @@ function ChatArea({ uid, openCid }: { uid: string; openCid?: string | null }) {
   const [q, setQ] = useState(''); // conversation search
 
   useEffect(() => {
-    if (!activeCid && convos.length > 0) setActiveCid(convos[0].id);
+    // Prefer the most recent USED conversation; fall back to whatever exists.
+    if (!activeCid && convos.length > 0) setActiveCid((convos.find((c) => c.lastStats !== undefined) ?? convos[0]).id);
   }, [convos, activeCid]);
 
   // "Discuss in chat" from an alert opens that alert's originating conversation.
@@ -163,6 +166,15 @@ function ChatArea({ uid, openCid }: { uid: string; openCid?: string | null }) {
   const newChat = async () => {
     setCreating(true);
     try {
+      // GC: quietly delete never-used chats older than an hour before creating
+      // another one ("New chat" shells were cluttering the list).
+      const cutoff = Date.now() - 3600_000;
+      for (const c of convos) {
+        if (c.lastStats === undefined && c.id !== activeCid) {
+          const t = Date.parse(c.updatedAt ?? c.createdAt ?? '');
+          if (Number.isFinite(t) && t < cutoff) void deleteConversation(c.id).catch(() => {});
+        }
+      }
       setActiveCid(await createConversation('New chat'));
     } catch (e) {
       console.error(e);
@@ -172,7 +184,9 @@ function ChatArea({ uid, openCid }: { uid: string; openCid?: string | null }) {
   };
 
   const activeTitle = convos.find((c) => c.id === activeCid)?.title || 'New chat';
-  const shown = q.trim() ? convos.filter((c) => (c.title || 'New chat').toLowerCase().includes(q.trim().toLowerCase())) : convos;
+  // Hide never-used conversations unless currently open — they have no content to revisit.
+  const visible = convos.filter((c) => c.lastStats !== undefined || c.id === activeCid);
+  const shown = q.trim() ? visible.filter((c) => (c.title || 'New chat').toLowerCase().includes(q.trim().toLowerCase())) : visible;
 
   return (
     <div className="relative flex h-full">
@@ -195,8 +209,8 @@ function ChatArea({ uid, openCid }: { uid: string; openCid?: string | null }) {
           </div>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
-          {convos.length === 0 && <p className="px-2 py-2 text-xs text-muted">No conversations yet.</p>}
-          {convos.length > 0 && shown.length === 0 && <p className="px-2 py-2 text-xs text-muted">No chats match “{q}”.</p>}
+          {visible.length === 0 && <p className="px-2 py-2 text-xs text-muted">No conversations yet.</p>}
+          {visible.length > 0 && shown.length === 0 && <p className="px-2 py-2 text-xs text-muted">No chats match “{q}”.</p>}
           {shown.map((c) => (
             <div key={c.id} className={`group flex items-center rounded-lg ${activeCid === c.id ? 'bg-surface-2' : 'hover:bg-surface-2/60'}`}>
               <button onClick={() => { setActiveCid(c.id); setDrawer(false); }} className="min-w-0 flex-1 px-3 py-2 text-left">
