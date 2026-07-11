@@ -110,6 +110,30 @@ function fail(state, errMsg, O, label) {
   return { state: s, alert };
 }
 
+// foldOutage(): fold one failed CONNECT cycle (feed-level, not per-monitor) into a
+// daemon-level outage state. Same WARN/CRIT/re-alert cadence as fail(), but ONE
+// coalesced alert covering all affected monitors — a feed outage used to escalate
+// independently per monitor, flooding alerts.log (and the chat) with 30-70
+// near-duplicate blind CRITICALs. Mirrors @overwatch/core monitor-gates.foldOutage.
+function foldOutage(state, errMsg, O, symbols) {
+  const { state: s, alert: base } = fail(state, errMsg, O, 'the Groww feed');
+  if (!base) return { state: s, alert: null };
+  const n = s.consecutiveFails || 0;
+  const count = symbols.length;
+  const list = symbols.join(', ');
+  const message =
+    base.severity === 'WARNING'
+      ? `Groww feed unreachable — I can't watch your ${count} monitor(s) (${list}) right now. ` +
+        `Keep an eye on them in Groww yourself. (${errMsg})`
+      : n === O.MAX_FAILS_CRIT
+        ? `Groww feed still down after ~${Math.round((n * O.BACKOFF_MS) / 60000)} min — all ${count} ` +
+          `monitor(s) are blind (${list}); a stop or target could be missed. Please check these ` +
+          `positions in Groww now.`
+        : `Groww feed still unreachable after ${n} tries — ${count} monitor(s) blind (${list}). ` +
+          `Watch them in Groww yourself. (${errMsg})`;
+  return { state: s, alert: { severity: base.severity, message } };
+}
+
 // recover(): a healthy cycle. If we were blind, emit a RECOVERED notice and
 // reset the failure counters. Returns { state, alert }.
 function recover(state, O, label) {
@@ -282,6 +306,7 @@ module.exports = {
   createMonitor,
   // exported for tests
   fail,
+  foldOutage,
   recover,
   istClock,
   marketOpen,

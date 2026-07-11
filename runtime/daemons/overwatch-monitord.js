@@ -21,7 +21,7 @@ const path = require('path');
 const os = require('os');
 const { notifyTelegram } = require('./lib/telegram.js');
 const {
-  istClock, marketOpen, withTimeout, fail, recover, DEFAULTS, GROWW_MCP_URL,
+  istClock, marketOpen, withTimeout, fail, foldOutage, recover, DEFAULTS, GROWW_MCP_URL,
 } = require('./lib/monitor-runtime.js');
 
 const OW = path.join(os.homedir(), '.overwatch');
@@ -144,19 +144,36 @@ async function pollOne(call, file) {
 
 // A connect-level failure blinds EVERY monitor (pollOne never runs). Fold it
 // into each active monitor's watchdog so blindness still escalates — the whole
-// point of this daemon (a dead feed must not look like a quiet market).
+// point of this daemon (a dead feed must not look like a quiet market). The
+// per-monitor fold is STATE-ONLY (returns the symbol, emits nothing): one feed
+// outage used to emit an escalating alert PER monitor, flooding alerts.log with
+// 30-70 near-duplicate blind CRITICALs; the single coalesced outage alert is
+// emitted from tick() via foldOutage instead.
 function foldConnectFail(file, errMsg) {
   const p = path.join(MON_DIR, file);
   const m = readJSON(p);
-  if (!m || m.disabled || (m.mode || 'in-session') === 'daemon') return;
+  if (!m || m.disabled || (m.mode || 'in-session') === 'daemon') return null;
   initState(m);
-  if (m.state.fired) return;
+  if (m.state.fired) return null;
   const sym = m.symbol || m.name;
   const wd = fail(m.state, errMsg, O, sym);
-  m.state = wd.state;
-  if (wd.alert) emit(sym, wd.alert.message, wd.alert.severity);
+  m.state = wd.state; // blindLevel/consecutiveFails still persist for monitorctl/list
+  writeJSON(p, m);
+  return sym;
+}
+
+// Quietly clear a monitor's blind counters after a FEED-level outage recovers —
+// its own recover() would otherwise emit one "RECOVERED" line per monitor.
+function quietResetBlind(file) {
+  const p = path.join(MON_DIR, file);
+  const m = readJSON(p);
+  if (!m || !m.state || !m.state.blindLevel || m.state.fired) return;
+  m.state = { ...m.state, consecutiveFails: 0, blindLevel: null, lastAlertedFail: 0, lastError: null };
   writeJSON(p, m);
 }
+
+// Daemon-level feed-outage watchdog (one per process; the daemon is single-user).
+let outageState = { fired: false, consecutiveFails: 0, blindLevel: null, lastAlertedFail: 0, breakoutAlerted: false };
 
 async function connect(tok) {
   const { Client } = require('@modelcontextprotocol/sdk/client/index.js');
@@ -182,12 +199,26 @@ async function tick() {
   let client;
   try {
     client = await connect(token());
+    // Feed reachable: resolve any daemon-level outage with ONE coalesced notice and
+    // quietly clear the per-monitor blind counters the outage inflated.
+    if ((outageState.consecutiveFails || 0) > 0) {
+      const rec = recover(outageState, O, 'The Groww feed');
+      outageState = rec.state;
+      if (rec.alert) emit('FEED', rec.alert.message, rec.alert.severity);
+      for (const f of files) quietResetBlind(f);
+    }
     const call = async (name, args) =>
       JSON.parse((await withTimeout(client.callTool({ name, arguments: args }), O.CALL_TIMEOUT_MS, name)).content[0].text);
     for (const f of files) { await pollOne(call, f); } // re-read dir each tick => live add/remove
   } catch (e) {
     console.error(`[monitord] tick connect failed: ${e.message}`);
-    for (const f of files) foldConnectFail(f, e.message);
+    // Per-monitor folds are state-only; ONE coalesced alert per escalation step.
+    const symbols = [...new Set(files.map((f) => foldConnectFail(f, e.message)).filter(Boolean))];
+    if (symbols.length) {
+      const wd = foldOutage(outageState, e.message, O, symbols);
+      outageState = wd.state;
+      if (wd.alert) emit('FEED', wd.alert.message, wd.alert.severity);
+    }
   } finally {
     if (client) { try { await withTimeout(client.close(), 5000, 'close'); } catch { /* ignore */ } }
     ticking = false;

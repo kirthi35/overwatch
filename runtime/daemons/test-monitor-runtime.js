@@ -78,6 +78,23 @@ async function main() {
     assert.strictEqual(r.state.blindLevel, null);
   });
 
+  await test('foldOutage: a 30-monitor feed outage emits 1 WARNING at #3 and 1 CRITICAL at #10 (not 30 each)', () => {
+    const symbols = Array.from({ length: 30 }, (_, i) => `SYM${i + 1}`);
+    let s = {};
+    const alerts = [];
+    for (let i = 1; i <= 10; i++) {
+      const r = rt.foldOutage(s, 'connect timeout', rt.DEFAULTS, symbols);
+      s = r.state;
+      if (r.alert) alerts.push(r.alert);
+    }
+    assert.strictEqual(alerts.length, 2, `expected exactly 2 alerts, got ${alerts.length}`);
+    assert.strictEqual(alerts[0].severity, 'WARNING');
+    assert.strictEqual(alerts[1].severity, 'CRITICAL');
+    assert.match(alerts[0].message, /30 monitor\(s\)/);
+    assert.match(alerts[0].message, /SYM1, SYM2/);
+    assert.match(alerts[1].message, /blind/);
+  });
+
   // 3. INTEGRATION — an MCP outage produces a BLIND alert AND the loop survives.
   await test('outage: BLIND alert written to sink, loop reschedules, never throws', async () => {
     const statePath = path.join(os.tmpdir(), `ow-test-state-${process.pid}.json`);

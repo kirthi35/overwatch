@@ -119,6 +119,35 @@ export function fail(state: MonitorState, errMsg: string, O: WatchdogOpts, label
   return { state: s, alert };
 }
 
+// foldOutage(): fold one failed CONNECT cycle (feed-level, not per-monitor) into a
+// user/conversation-level outage state. Same WARN@3 / CRIT@10 / re-alert-every-10
+// cadence as fail(), but ONE coalesced alert covering all affected monitors — a
+// feed outage used to escalate independently per monitor, flooding a conversation
+// with 30-70 near-duplicate blind CRITICALs.
+export function foldOutage(
+  state: MonitorState,
+  errMsg: string,
+  O: WatchdogOpts,
+  symbols: string[],
+): { state: MonitorState; alert: WatchdogAlert | null } {
+  const { state: s, alert: base } = fail(state, errMsg, O, 'the Groww feed');
+  if (!base) return { state: s, alert: null };
+  const n = s.consecutiveFails || 0;
+  const count = symbols.length;
+  const list = symbols.join(', ');
+  const message =
+    base.severity === 'WARNING'
+      ? `Groww feed unreachable — I can't watch your ${count} monitor(s) (${list}) right now. ` +
+        `Keep an eye on them in Groww yourself. (${errMsg})`
+      : n === O.MAX_FAILS_CRIT
+        ? `Groww feed still down after ~${Math.round((n * O.BACKOFF_MS) / 60000)} min — all ${count} ` +
+          `monitor(s) are blind (${list}); a stop or target could be missed. Please check these ` +
+          `positions in Groww now.`
+        : `Groww feed still unreachable after ${n} tries — ${count} monitor(s) blind (${list}). ` +
+          `Watch them in Groww yourself. (${errMsg})`;
+  return { state: s, alert: { severity: base.severity, message } };
+}
+
 // recover(): a healthy cycle. If we were blind, emit RECOVERED and reset counters.
 export function recover(state: MonitorState, O: WatchdogOpts, label: string): { state: MonitorState; alert: WatchdogAlert | null } {
   const s: MonitorState = { ...state };

@@ -26,6 +26,7 @@ export { GrowwDataClient } from './groww-client.js';
 export {
   evaluateGates,
   fail,
+  foldOutage,
   recover,
   marketOpen,
   istClock,

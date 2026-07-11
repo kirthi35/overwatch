@@ -3,6 +3,7 @@ import {
   GrowwDataClient,
   evaluateGates,
   fail,
+  foldOutage,
   recover,
   marketOpen,
   istClock,
@@ -38,6 +39,12 @@ interface HotEntry {
 export class MonitorWorker {
   private hot = new Map<string, HotEntry>();
   private telegramByUid = new Map<string, TelegramConfig | undefined>();
+  // USER-level feed-outage watchdog (one per uid): a dead connect/token blinds every
+  // monitor at once, and used to escalate per monitor — 30-70 near-duplicate blind
+  // CRITICALs per outage. Now the per-monitor states still fold (list_monitors shows
+  // BLIND) but only this coalesced watchdog emits alerts. In-memory: a worker restart
+  // resets escalation, same semantics as the hot cache.
+  private outageByUid = new Map<string, MonitorState>();
   private ticking = false;
   private timer?: ReturnType<typeof setInterval>;
   private unsub?: () => void;
@@ -126,21 +133,57 @@ export class MonitorWorker {
     }
     if (!token) token = this.devToken; // dev single-operator fallback (§24) — shared .env token
     if (!token) {
-      for (const e of entries) await this.applyFailure(e, 'no Groww token for user');
+      await this.applyOutage(uid, entries, 'no Groww token for user');
       return;
     }
     const client = new GrowwDataClient(token);
     try {
       await client.connect();
     } catch (e: any) {
-      // A connect failure blinds every one of this user's monitors — fold it into each
-      // watchdog so blindness escalates rather than looking like a quiet market.
-      for (const en of entries) await this.applyFailure(en, e.message);
+      // A connect failure blinds every one of this user's monitors. Fold it into the
+      // per-monitor watchdogs (state only) + ONE coalesced user-level outage alert.
+      await this.applyOutage(uid, entries, e.message);
       await client.close();
       return;
     }
+    // Feed reachable: resolve any user-level outage with ONE coalesced INFO, and
+    // quietly clear the per-monitor blind counters the outage inflated (their
+    // individual recover() would otherwise emit one "back" INFO per monitor).
+    const out = this.outageByUid.get(uid);
+    if (out && (out.consecutiveFails || 0) > 0) {
+      const rec = recover(out, this.O, 'The Groww feed');
+      this.outageByUid.set(uid, rec.state);
+      if (rec.alert) await this.emitFeedAlert(uid, undefined, rec.alert.severity, rec.alert.message, true);
+      for (const e of entries) {
+        if (e.state.blindLevel) {
+          e.state = { ...e.state, consecutiveFails: 0, blindLevel: null, lastAlertedFail: 0, lastError: null };
+        }
+      }
+    }
     for (const e of entries) await this.pollOne(client, e, now);
     await client.close();
+  }
+
+  // One feed outage = ONE escalating alert stream per user (delivered once per
+  // affected conversation so each chat still wakes), not one per monitor.
+  private async applyOutage(uid: string, entries: HotEntry[], msg: string): Promise<void> {
+    // Per-monitor state still folds so list_monitors shows BLIND — alerts suppressed.
+    for (const en of entries) await this.applyFailure(en, msg, true);
+
+    const st = this.outageByUid.get(uid) ?? initMonitorState();
+    const symbols = [...new Set(entries.map((e) => e.monitor.symbol || e.monitor.name))];
+    const wd = foldOutage(st, msg, this.O, symbols);
+    this.outageByUid.set(uid, wd.state);
+    if (!wd.alert) return;
+
+    // Group by conversation: the alert-router injects per (uid, cid). Monitors with
+    // no conversation fold into one cid-less alert (Alerts tab + Telegram only).
+    const cids = [...new Set(entries.map((e) => e.monitor.conversationId))];
+    let telegramSent = false;
+    for (const cid of cids) {
+      await this.emitFeedAlert(uid, cid, wd.alert.severity, wd.alert.message, !telegramSent);
+      telegramSent = true; // Telegram once per user per escalation step
+    }
   }
 
   private async pollOne(client: GrowwDataClient, e: HotEntry, now: number): Promise<void> {
@@ -190,12 +233,42 @@ export class MonitorWorker {
     }
   }
 
-  private async applyFailure(e: HotEntry, msg: string): Promise<void> {
+  private async applyFailure(e: HotEntry, msg: string, suppressAlert = false): Promise<void> {
+    const prevBlind = e.state.blindLevel;
     const wd = fail(e.state, msg, this.O, e.monitor.symbol || e.monitor.name);
     e.state = wd.state;
-    if (wd.alert) {
+    if (wd.alert && !suppressAlert) {
       await this.emit(e, wd.alert.severity, wd.alert.message, false);
       await this.flushState(e, Date.now());
+    } else if (wd.state.blindLevel !== prevBlind) {
+      // Alert coalesced away (user-level outage) — still persist the blind
+      // transition promptly so list_monitors shows BLIND before the heartbeat.
+      await this.flushState(e, Date.now());
+    }
+  }
+
+  // Coalesced feed-outage alert (label FEED, monitorName '_feed-outage'). cid targets
+  // one conversation's router; undefined = Alerts tab + Telegram only.
+  private async emitFeedAlert(uid: string, cid: string | undefined, severity: AlertSeverity, message: string, telegram: boolean): Promise<void> {
+    try {
+      await new FirestoreStore(this.db, uid).appendAlert({
+        ts: new Date().toISOString(),
+        severity,
+        label: 'FEED',
+        message,
+        monitorName: '_feed-outage',
+        conversationId: cid,
+        terminal: false,
+      });
+    } catch (err: any) {
+      console.error('[worker] appendAlert (feed outage) failed:', err.message);
+    }
+    if (telegram) {
+      try {
+        await notifyTelegram({ label: 'FEED', message, severity }, this.telegramByUid.get(uid));
+      } catch {
+        /* delivery is best-effort */
+      }
     }
   }
 
