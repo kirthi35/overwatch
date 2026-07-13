@@ -42,6 +42,15 @@ a gate fails. Cash is a valid position.
    green reversal candle**, not a forming one.
 4. **No-chase ceiling.** If **RSI ≥ 75–78** *or* price is above the upper Bollinger
    / far above the entry reference → **downgrade to WATCH** (no chasing).
+5. **Structural ATR stop.** The stop must sit at the real invalidation level (swing low
+   / SuperTrend / below the base) AND be **≥ ~1.5× ATR** from entry. A stop tighter than
+   1.5× ATR, or one INSIDE the current day's own range (above today's low for a long), is
+   a noise-stop → reject it. If the structural stop is too wide for the risk budget, CUT
+   THE SHARE COUNT — never tighten the stop to fit.
+6. **First-target R:R.** Reward:risk must clear **~2:1 to the FIRST realistic target (T1)**,
+   measured against the structural stop from gate 5 — not to a far T2, and not to a T1
+   parked right under overhead resistance / a prior high. If T1 doesn't clear ~2:1 → NO-TRADE
+   (WATCH). Do not pad R:R by tightening the stop or stretching T1 into resistance.
 
 ## Data (Groww MCP, read-only)
 ```
@@ -60,8 +69,10 @@ ENTRY GATE — <STOCK> @ ₹<ltp>
  2. Order-book ≤ 3:1 ..... PASS / FAIL (<ratio>:1, session-age <n>m)
  3. Closed green reversal  PASS / FAIL
  4. No-chase (RSI/BB) .... PASS / WATCH (<rsi>)
+ 5. Structural ATR stop .. PASS / FAIL (stop ₹<stop> = <x>× ATR, below <structure>)
+ 6. R:R ≥ 2:1 to T1 ...... PASS / FAIL (risk ₹<r>, T1 ₹<t1> = <n>:1)
 VERDICT: ENTER NOW / STAND DOWN / WATCH
-GTT stop to arm in Groww: ₹<stop>   (from swing-horizon-sizer)
+GTT stop to arm in Groww: ₹<stop>   T1: ₹<t1> (<n>:1)   (from swing-horizon-sizer)
 ```
 
 - **Read-only:** you output a plan; the operator executes and arms the GTT manually.

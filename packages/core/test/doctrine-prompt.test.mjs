@@ -39,6 +39,18 @@ for (const shellTools of [true, false]) {
     assert.match(prompt, /adherence override/);
   });
 
+  test(`master prompt (${label}): trade-craft rules (audit leaks 1-2 + arm-time)`, () => {
+    // Leak 1 — ATR-aware structural stop, cut size not stop
+    assert.match(prompt, /1\.5× ATR/);
+    assert.match(prompt, /CUT THE SHARE COUNT, never\s*\n?\s*tighten the stop/);
+    // Leak 2 — first-target R:R gate
+    assert.match(prompt, /FIRST-TARGET R:R GATE/);
+    assert.match(prompt, /clear ~2:1 to the FIRST realistic target/);
+    // regime before counter-trend + risk card at arm-time
+    assert.match(prompt, /REGIME BEFORE COUNTER-TREND/);
+    assert.match(prompt, /RISK CARD AT ARM-TIME/);
+  });
+
   test(`master prompt (${label}): privacy & secrets (P7)`, () => {
     assert.match(prompt, /## PRIVACY & SECRETS/);
     assert.match(prompt, /Refuse custody of secrets/);
