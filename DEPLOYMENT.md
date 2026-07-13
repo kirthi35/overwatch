@@ -123,6 +123,16 @@ OVERWATCH_SECRET_KEY=<random 32+ byte hex string>        # master key for per-us
 OVERWATCH_CORS_ORIGIN=https://over-watch.in,https://www.over-watch.in   # comma-separated allowlist
 PORT=8787
 
+# --- Composio general-assistant path (optional; non-market tasks + code sandbox) ---
+# When COMPOSIO_KEY is set, an intent classifier routes non-market prompts to Composio
+# tools (email/calendar/github/slack/notion) + an off-box code sandbox. Per-user
+# isolation is by Composio userId = Firebase uid (Composio holds each user's app
+# tokens; we store none). Omit COMPOSIO_KEY to keep Overwatch trading-only.
+COMPOSIO_KEY=<composio account api key>
+# Where Composio redirects the browser after a user completes an app's OAuth. MUST be
+# allow-listed in the Composio dashboard (per auth config). Prod = the frontend origin.
+COMPOSIO_CALLBACK_URL=https://over-watch.in
+
 # --- Dev single-operator mode (see WARNING below) ---
 OVERWATCH_DEV_CREDS_FROM_ENV=1
 groww_api_key=<groww read-only token>
@@ -131,6 +141,14 @@ OLLAMA_API_KEY=<ollama-cloud / GLM key, optional>
 OVERWATCH_LLM=glm                                        # 'glm' or 'claude'
 overwatch_glm_model=<glm model id>
 ```
+
+> **Composio dashboard (one-time, required for the general path to actually connect):**
+> in the Composio dashboard create an auth config for each toolkit you want
+> (gmail, googlecalendar, github, slack, notion) and **allow-list your
+> `COMPOSIO_CALLBACK_URL`** (prod `https://over-watch.in`, dev `http://localhost:5173`).
+> Without the allow-list, OAuth redirects are rejected. New backend deps ship with
+> this feature (`@composio/core`, `@composio/experimental`), so the box needs
+> `npm install` on the next deploy, not just a `dist` tar.
 
 ```bash
 ssh root@151.185.47.45 'chmod 600 /opt/overwatch/.env'
