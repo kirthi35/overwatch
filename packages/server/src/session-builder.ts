@@ -115,7 +115,19 @@ export async function buildUserSession(u: UserContext, opts: BuildSessionOptions
       // surfaces monitor fires via its own Firestore listener (phase 5), not file-tailing.
       extensionFactories: opts.noDoctrine
         ? [...(opts.extraExtensions ?? [])]
-        : [makeOverwatchExtension(u, { alertBridge: false, shellTools: false }), ...(opts.extraExtensions ?? [])],
+        : [
+            makeOverwatchExtension(u, {
+              alertBridge: false,
+              shellTools: false,
+              // Composio general-assistant path — enabled when an account key is configured
+              // (shared key; per-user isolation via userId=uid inside the bridge). Non-market
+              // prompts route to Composio tools; market prompts keep the trading doctrine.
+              composio: process.env.COMPOSIO_KEY
+                ? { apiKey: process.env.COMPOSIO_KEY, callbackUrl: process.env.COMPOSIO_CALLBACK_URL }
+                : undefined,
+            }),
+            ...(opts.extraExtensions ?? []),
+          ],
     },
   });
 

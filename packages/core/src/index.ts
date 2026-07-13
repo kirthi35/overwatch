@@ -4,6 +4,12 @@
 
 export { makeOverwatchExtension, MASTER_SYSTEM_PROMPT, buildMasterPrompt } from './doctrine.js';
 export { relativeAge, formatIst, istNowBanner } from './time.js';
+export { ComposioBridge, DEFAULT_TOOLKITS, isDestructiveBash } from './composio-bridge.js';
+export type { ComposioStatus } from './composio-bridge.js';
+export { classifyIntent } from './intent.js';
+export type { Intent } from './intent.js';
+export { listComposioConnections, initiateComposioConnection, disconnectComposio } from './composio-admin.js';
+export type { ComposioConnection } from './composio-admin.js';
 export type { OverwatchExtensionOptions } from './doctrine.js';
 export {
   resolveLlmProvider,

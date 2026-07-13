@@ -5,6 +5,7 @@ import { verifyIdToken } from './firebase.js';
 import { SecretsStore, type UserCreds } from './secrets-store.js';
 import { buildUserContext } from './user-context.js';
 import { listAvailableModels } from './session-builder.js';
+import { listComposioConnections, initiateComposioConnection, disconnectComposio } from '@overwatch/core';
 import type { SessionPool } from './pool.js';
 
 export interface ServerDeps {
@@ -56,6 +57,51 @@ export async function createServer(deps: ServerDeps): Promise<FastifyInstance> {
     }
     await new SecretsStore(deps.db, uid).put(creds);
     reply.send({ ok: true });
+  });
+
+  // ---- Composio integrations (Settings → Integrations panel) --------------------
+  // userId is ALWAYS the verified token uid (never client input) — a wrong userId
+  // would reach another tenant's connected accounts.
+  const composioKey = () => process.env.COMPOSIO_KEY || '';
+
+  // List connectable toolkits + this user's connection state.
+  app.get('/composio/connections', async (req, reply) => {
+    const uid = await auth(req, reply);
+    if (!uid) return;
+    if (!composioKey()) { reply.send({ enabled: false, connections: [] }); return; }
+    try {
+      reply.send({ enabled: true, connections: await listComposioConnections(composioKey(), uid) });
+    } catch (e: any) {
+      reply.code(502).send({ error: e?.message ?? 'composio error' });
+    }
+  });
+
+  // Start OAuth for a toolkit; returns the redirect URL for the browser.
+  app.post('/composio/connect', async (req, reply) => {
+    const uid = await auth(req, reply);
+    if (!uid) return;
+    if (!composioKey()) { reply.code(400).send({ error: 'composio not configured' }); return; }
+    const { toolkit } = (req.body || {}) as { toolkit?: string };
+    if (!toolkit) { reply.code(400).send({ error: 'toolkit required' }); return; }
+    try {
+      const { redirectUrl } = await initiateComposioConnection(composioKey(), uid, toolkit, process.env.COMPOSIO_CALLBACK_URL);
+      reply.send({ redirectUrl });
+    } catch (e: any) {
+      reply.code(502).send({ error: e?.message ?? 'composio error' });
+    }
+  });
+
+  // Revoke this user's connection for a toolkit.
+  app.delete('/composio/connections/:toolkit', async (req, reply) => {
+    const uid = await auth(req, reply);
+    if (!uid) return;
+    if (!composioKey()) { reply.code(400).send({ error: 'composio not configured' }); return; }
+    const { toolkit } = req.params as { toolkit: string };
+    try {
+      reply.send(await disconnectComposio(composioKey(), uid, toolkit));
+    } catch (e: any) {
+      reply.code(502).send({ error: e?.message ?? 'composio error' });
+    }
   });
 
   // Models this user can pick (auth-filtered by which keys they onboarded).

@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useCollection } from '../lib/useFirestore';
+import { listComposioConnections, connectComposio, disconnectComposio, type ComposioConnection } from '../lib/api';
 
 type Category = 'constitution' | 'skill' | 'shared' | 'lesson';
 
@@ -19,6 +20,7 @@ export function SettingsTab({ uid }: { uid: string }) {
     <div className="mx-auto max-w-4xl space-y-6 p-6">
       <h2 className="text-sm font-semibold">Settings</h2>
       <CapitalCard uid={uid} />
+      <IntegrationsCard />
       <SectorMapCard uid={uid} />
       <DoctrineViewer />
       <p className="text-xs text-muted">
@@ -80,6 +82,81 @@ function DoctrineViewer() {
           );
         })}
       </div>
+    </section>
+  );
+}
+
+// ── Integrations (Composio connected apps) ─────────────────────────────────────────
+function IntegrationsCard() {
+  const [enabled, setEnabled] = useState(true);
+  const [conns, setConns] = useState<ComposioConnection[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState<string | null>(null); // toolkit currently connecting/disconnecting
+  const [err, setErr] = useState('');
+
+  const load = async () => {
+    setErr('');
+    try {
+      const r = await listComposioConnections();
+      setEnabled(r.enabled);
+      setConns(r.connections);
+    } catch (e: any) {
+      setErr(e.message ?? String(e));
+    } finally {
+      setLoading(false);
+    }
+  };
+  useEffect(() => { void load(); }, []);
+
+  const connect = async (toolkit: string) => {
+    setBusy(toolkit); setErr('');
+    try {
+      const { redirectUrl } = await connectComposio(toolkit);
+      // Open Composio-hosted OAuth in a new tab; user returns to the app after consent.
+      window.open(redirectUrl, '_blank', 'noopener');
+    } catch (e: any) {
+      setErr(e.message ?? String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+  const disconnect = async (toolkit: string) => {
+    setBusy(toolkit); setErr('');
+    try {
+      await disconnectComposio(toolkit);
+      await load();
+    } catch (e: any) {
+      setErr(e.message ?? String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  if (!loading && !enabled) return null; // Composio not configured on the server — hide the card.
+
+  return (
+    <section className="rounded-2xl border border-border bg-surface p-4">
+      <h3 className="mb-1 text-sm font-semibold">Integrations</h3>
+      <p className="mb-3 text-xs text-muted">Connect your apps so the assistant can act on them (email, calendar, GitHub, Slack, Notion). Auth is handled by Composio; tokens never touch Overwatch.</p>
+      {loading && <p className="text-xs text-muted">Loading…</p>}
+      <div className="space-y-1">
+        {conns.map((c) => (
+          <div key={c.toolkit} className="flex items-center justify-between rounded-lg border border-border/60 px-3 py-2">
+            <span className="text-sm">
+              {c.name}
+              {c.connected
+                ? <span className="ml-2 rounded bg-accent/15 px-1.5 py-0.5 text-[10px] text-accent">connected</span>
+                : <span className="ml-2 text-[10px] text-muted">not connected</span>}
+            </span>
+            {c.connected ? (
+              <button disabled={busy === c.toolkit} onClick={() => disconnect(c.toolkit)} className="rounded-lg border border-border px-2.5 py-1 text-xs text-muted hover:bg-surface-2 disabled:opacity-50">Disconnect</button>
+            ) : (
+              <button disabled={busy === c.toolkit} onClick={() => connect(c.toolkit)} className="rounded-lg bg-accent px-2.5 py-1 text-xs font-medium text-accent-fg hover:opacity-90 disabled:opacity-50">Connect</button>
+            )}
+          </div>
+        ))}
+      </div>
+      {err && <p className="mt-2 text-xs text-red-500">{err}</p>}
     </section>
   );
 }

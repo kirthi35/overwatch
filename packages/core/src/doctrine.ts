@@ -4,6 +4,8 @@ import { setupAutoLoader } from './auto-loader.js';
 import { registerCustomTools } from './custom-tools.js';
 import { setupAlertBridge } from './alert-bridge.js';
 import { istNowBanner } from './time.js';
+import { ComposioBridge } from './composio-bridge.js';
+import { classifyIntent } from './intent.js';
 import { UserContext } from './types.js';
 
 // The master doctrine prompt injected on every turn via before_agent_start.
@@ -288,6 +290,11 @@ export interface OverwatchExtensionOptions {
    *  produce "Tool bash not found" errors). Server-side reads go through list_monitors,
    *  writes through write_thesis. */
   shellTools?: boolean;
+  /** Enable the Composio general-assistant path (non-market turns). When an apiKey
+   *  is present, a per-turn intent classifier routes general prompts to Composio
+   *  tools + the general prompt; market prompts keep the trading doctrine + Groww.
+   *  Omit to keep Overwatch trading-only (classifier always returns 'market'). */
+  composio?: { apiKey?: string; callbackUrl?: string };
 }
 
 // Build the Overwatch doctrine extension for ONE user. Wires the master prompt
@@ -299,15 +306,49 @@ export function makeOverwatchExtension(
   u: UserContext,
   opts: OverwatchExtensionOptions = {},
 ): ExtensionFactory {
-  const { alertBridge = true, shellTools = true } = opts;
+  const { alertBridge = true, shellTools = true, composio: composioOpts } = opts;
   const masterPrompt = buildMasterPrompt({ shellTools });
   return (api: ExtensionAPI) => {
     const groww = new GrowwMcpBridge(u.growwToken);
+    // Composio is per-user (userId = uid); only built when an account key is configured.
+    const composio = composioOpts?.apiKey
+      ? new ComposioBridge(u.uid, composioOpts.apiKey, composioOpts.callbackUrl)
+      : null;
 
-    api.on('before_agent_start', async () => {
-      // Connect to Groww MCP and register tools dynamically. Runs per query, so
-      // it re-attempts the connection each turn if a prior turn was blind.
+    // The active tool set PERSISTS across turns in Pi and is never auto-reset, so we
+    // MUST call setActiveTools every turn on BOTH branches (else the prior turn's
+    // toolset leaks). Composio helper tools are name-prefixed `composio_`.
+    const isComposioTool = (name: string) => name.startsWith('composio_');
+
+    api.on('before_agent_start', async (event) => {
+      // GENERAL branch — route non-market prompts to Composio (only if configured
+      // AND the session comes up). Lazy: a market-only user never creates a session.
+      if (composio && classifyIntent(event.prompt) === 'general') {
+        const cs = await composio.setup(api);
+        if (cs.ready) {
+          // Hard persona boundary: general turns see ONLY the Composio helper tools.
+          api.setActiveTools(composio.toolNames());
+          const preamble =
+            `# OVERWATCH — General Assistant mode\n` +
+            `You are Overwatch acting as a general personal assistant for this user's ` +
+            `connected apps (email, calendar, GitHub, Slack, Notion, …) via Composio. ` +
+            `Discover exact tools with composio_search_tools, connect missing apps with ` +
+            `composio_manage_connections (surface any auth link to the user as a clickable ` +
+            `link), execute with composio_execute_tool, and run code in the off-box sandbox ` +
+            `(composio_remote_workbench / composio_remote_bash) when needed. This is NOT the ` +
+            `trading assistant — do not give market/trading advice here; if the user turns to ` +
+            `stocks, they'll be routed back automatically.\n\n`;
+          return { systemPrompt: preamble + composio.systemPrompt() };
+        }
+        // Composio unavailable this turn — fall through to the market/trading path so
+        // the app still works, but strip any stale composio tools from the active set.
+      }
+
+      // MARKET branch (default). Connect Groww + register tools; re-attempts each turn.
       const s = await groww.setup(api);
+
+      // Hard boundary: market turns see everything EXCEPT the composio helpers.
+      api.setActiveTools(api.getAllTools().map((t) => t.name).filter((n) => !isComposioTool(n)));
 
       // If the live feed is down THIS turn, prepend a loud banner so the model
       // knows it's blind and refuses to fabricate prices (DATA INTEGRITY rule 2).

@@ -16,6 +16,8 @@
     "test": "npm run build && node --test test/*.test.mjs"
   },
   "dependencies": {
+    "@composio/core": "^0.13.1",
+    "@composio/experimental": "^0.1.0",
     "@earendil-works/pi-agent-core": "^0.80.2",
     "@earendil-works/pi-coding-agent": "^0.80.2",
     "@modelcontextprotocol/sdk": "^1.29.0",

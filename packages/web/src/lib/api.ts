@@ -24,6 +24,37 @@ export async function saveSecrets(creds: UserCredsInput): Promise<void> {
   if (!res.ok) throw new Error(`saveSecrets failed: ${res.status} ${await res.text()}`);
 }
 
+export interface ComposioConnection {
+  toolkit: string;
+  name: string;
+  connected: boolean;
+  status: string;
+}
+
+export async function listComposioConnections(): Promise<{ enabled: boolean; connections: ComposioConnection[] }> {
+  const res = await fetch(`${API_URL}/composio/connections`, { headers: await authHeaders() });
+  if (!res.ok) throw new Error(`connections failed: ${res.status}`);
+  return res.json();
+}
+
+export async function connectComposio(toolkit: string): Promise<{ redirectUrl: string }> {
+  const res = await fetch(`${API_URL}/composio/connect`, {
+    method: 'POST',
+    headers: { ...(await authHeaders()), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ toolkit }),
+  });
+  if (!res.ok) throw new Error(`connect failed: ${res.status} ${await res.text()}`);
+  return res.json();
+}
+
+export async function disconnectComposio(toolkit: string): Promise<void> {
+  const res = await fetch(`${API_URL}/composio/connections/${encodeURIComponent(toolkit)}`, {
+    method: 'DELETE',
+    headers: await authHeaders(),
+  });
+  if (!res.ok) throw new Error(`disconnect failed: ${res.status}`);
+}
+
 export interface ModelInfo {
   provider: string;
   id: string;
